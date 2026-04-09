@@ -84,7 +84,21 @@ class BotUiTests(unittest.TestCase):
         self.assertNotEqual(start_text, help_text)
         self.assertIn("Quick start:", start_text)
         self.assertIn("/help", start_text)
-        self.assertIn("Plain text without a command is also sent to Codex.", start_text)
+        self.assertIn("Plain text without a command is sent to Codex.", start_text)
+
+    def test_help_text_is_grouped_and_low_noise(self) -> None:
+        help_text = CodexTelegramBot._help_text()
+        self.assertIn("Help", help_text)
+        self.assertIn("Plain text without a command is sent to Codex.", help_text)
+        self.assertIn("Quick start", help_text)
+        self.assertIn("Chats and sessions", help_text)
+        self.assertIn("Runtime and accounts", help_text)
+        self.assertIn("VSCode and session files", help_text)
+        self.assertIn("Utility", help_text)
+        self.assertIn("/help - show command list or mini docs", help_text)
+        self.assertIn("/attachsession - bind session id or rollout file to active chat", help_text)
+        self.assertIn("Use /help <command> for mini docs.", help_text)
+        self.assertNotIn("aliases:", help_text)
 
     def test_usage_error_messages_are_recovery_first(self) -> None:
         self.assertEqual(

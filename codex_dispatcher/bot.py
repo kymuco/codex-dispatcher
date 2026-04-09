@@ -907,7 +907,7 @@ class CodexTelegramBot:
 
     @classmethod
     def _command_docs(cls) -> tuple[dict[str, Any], ...]:
-        return (
+        docs = (
             {
                 "command": "/help",
                 "menu": "help",
@@ -1116,6 +1116,51 @@ class CodexTelegramBot:
                 "examples": ("/chatid", "/id"),
             },
         )
+        return tuple(
+            {
+                **doc,
+                "section": str(doc.get("section") or cls._command_section(str(doc["command"]))),
+            }
+            for doc in docs
+        )
+
+    @staticmethod
+    def _command_section(command: str) -> str:
+        section_map = {
+            "/help": "quick_start",
+            "/status": "quick_start",
+            "/newchat": "quick_start",
+            "/ask": "quick_start",
+            "/threads": "chats_sessions",
+            "/sessionid": "chats_sessions",
+            "/use": "chats_sessions",
+            "/resetchat": "chats_sessions",
+            "/attachsession": "chats_sessions",
+            "/accounts": "runtime_accounts",
+            "/switch": "runtime_accounts",
+            "/settings": "runtime_accounts",
+            "/model": "runtime_accounts",
+            "/reasoning": "runtime_accounts",
+            "/sandbox": "runtime_accounts",
+            "/edit": "runtime_accounts",
+            "/fullaccess": "runtime_accounts",
+            "/clonevscode": "vscode_files",
+            "/deletevscodecopy": "vscode_files",
+            "/exportvscode": "vscode_files",
+            "/syncvscode": "vscode_files",
+            "/chatid": "utility",
+        }
+        return section_map.get(command, "utility")
+
+    @staticmethod
+    def _help_sections() -> tuple[tuple[str, str], ...]:
+        return (
+            ("quick_start", "Quick start"),
+            ("chats_sessions", "Chats and sessions"),
+            ("runtime_accounts", "Runtime and accounts"),
+            ("vscode_files", "VSCode and session files"),
+            ("utility", "Utility"),
+        )
 
     @classmethod
     def _command_doc_map(cls) -> dict[str, dict[str, Any]]:
@@ -1272,18 +1317,30 @@ class CodexTelegramBot:
 
     @classmethod
     def _help_text(cls) -> str:
-        lines = ["Commands (use /help <command> for mini docs):"]
+        grouped: dict[str, list[dict[str, Any]]] = {}
         for doc in cls._command_docs():
-            aliases = doc.get("aliases", ())
-            alias_suffix = ""
-            if aliases:
-                alias_suffix = f" | aliases: {', '.join(str(alias) for alias in aliases)}"
-            lines.append(f"{doc['command']} - {doc['summary']}{alias_suffix}")
+            section = str(doc.get("section") or "utility")
+            grouped.setdefault(section, []).append(doc)
+
+        lines = [
+            "Help",
+            "",
+            "Plain text without a command is sent to Codex.",
+            "",
+        ]
+        for section_key, section_title in cls._help_sections():
+            docs = grouped.get(section_key, [])
+            if not docs:
+                continue
+            lines.append(section_title)
+            for doc in docs:
+                lines.append(f"{doc['command']} - {doc['summary']}")
+            lines.append("")
+
         lines.extend(
             [
-                "",
-                "You can also use the Telegram keyboard buttons for quick actions.",
-                "Plain text without a command is also sent to Codex.",
+                "Use /help <command> for mini docs.",
+                "Telegram keyboard buttons are also available for quick actions.",
             ]
         )
         return "\n".join(lines)
@@ -1300,5 +1357,5 @@ class CodexTelegramBot:
             "- /status (or /state) to view current state\n"
             "- /help to open full command docs\n\n"
             "You can also use the keyboard buttons below for quick actions.\n"
-            "Plain text without a command is also sent to Codex."
+            "Plain text without a command is sent to Codex."
         )
