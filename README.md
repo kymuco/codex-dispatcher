@@ -177,6 +177,7 @@ python -m unittest discover -s tests -v
 - `RELEASE.md`: release checklist and tagging flow.
 - `CONTRIBUTING.md`: contribution guidelines for pull requests.
 - `SECURITY.md`: vulnerability reporting process.
+- `CODE_OF_CONDUCT.md`: community behavior expectations and enforcement.
 
 ## License
 

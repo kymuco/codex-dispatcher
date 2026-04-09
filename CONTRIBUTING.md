@@ -2,6 +2,8 @@
 
 Thanks for helping improve Codex Dispatcher.
 
+Please follow the community standards described in `CODE_OF_CONDUCT.md`.
+
 ## Development Setup
 
 ```powershell
@@ -21,6 +23,7 @@ python -m unittest discover -s tests -v
 3. Update docs (`README.md`, `CHANGELOG.md`, `RELEASE.md`) when relevant.
 4. Ensure tests pass locally before opening the PR.
 5. Keep secrets and local runtime files out of commits.
+6. Use GitHub issue/PR templates when opening new work.
 
 ## Commit Message Style
 

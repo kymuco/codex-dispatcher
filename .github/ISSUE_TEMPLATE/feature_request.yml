@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an improvement for Codex Dispatcher
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Clear use-cases help us prioritize and design safely.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or goal
+      description: What are you trying to achieve?
+      placeholder: I want to ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What behavior or command should be added?
+      placeholder: Add command `/example` that ...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workaround or other approach you considered.
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and tradeoffs
+      description: Any known side effects, compatibility concerns, or security impact.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation
+      options:
+        - label: I checked existing issues and did not find a duplicate.
+          required: true
