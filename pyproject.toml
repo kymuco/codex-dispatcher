@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-dispatcher"
+version = "0.1.0"
+description = "Telegram dispatcher for driving local Codex sessions with account switching."
+readme = "README.md"
+requires-python = ">=3.13"
+license = { file = "LICENSE" }
+keywords = ["telegram", "codex", "bot", "automation", "cli"]
+
+[project.scripts]
+codex-dispatcher = "codex_dispatcher.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["codex_dispatcher*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

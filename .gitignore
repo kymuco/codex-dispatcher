@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+
+config.json
+data/
+.codex-bot-state/
+backups/
+test.txt
+
+venv/
+*.egg-info/
+build/
+dist/

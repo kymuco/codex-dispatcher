@@ -1,0 +1,42 @@
+{
+  "telegram_token": "1234567890:replace-with-your-bot-token",
+  "allowed_chat_ids": [
+    123456789
+  ],
+  "polling_timeout_seconds": 25,
+  "polling_retry_delay_seconds": 3,
+  "codex": {
+    "binary": "codex",
+    "cwd": ".",
+    "state_dir": ".codex-bot-state",
+    "model": null,
+    "extra_args": [
+      "--skip-git-repo-check"
+    ],
+    "cli_auth_credentials_store": "file",
+    "auto_switch_on_limit": true,
+    "response_timeout_seconds": 7200,
+    "limit_markers": [
+      "usage limit",
+      "rate limit",
+      "quota exceeded",
+      "try again later",
+      "too many requests",
+      "credits",
+      "limit reached",
+      "429"
+    ]
+  },
+  "accounts": [
+    {
+      "name": "acc1",
+      "auth_file": "C:\\path\\to\\accounts\\acc1\\auth.json",
+      "extra_files": []
+    },
+    {
+      "name": "acc2",
+      "auth_file": "C:\\path\\to\\accounts\\acc2\\auth.json",
+      "extra_files": []
+    }
+  ]
+}
