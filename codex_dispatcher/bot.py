@@ -281,6 +281,12 @@ class CodexTelegramBot:
                     reply_to_message_id=reply_to_message_id,
                     text=self._status_text(chat_id),
                 )
+            elif command in {"/sessionid", "/sid"}:
+                self.telegram.send_message(
+                    chat_id=chat_id,
+                    reply_to_message_id=reply_to_message_id,
+                    text=self._session_id_text(chat_id),
+                )
             elif command == "/threads":
                 self.telegram.send_message(
                     chat_id=chat_id,
@@ -301,12 +307,14 @@ class CodexTelegramBot:
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
                     text=(
-                        f"Session attached to local chat '{alias}'.\n"
+                        f"Session attached to local chat '{alias}'.\n\n"
                         f"Source session id: {attachment.source_session_id}\n"
                         f"Local session id: {attachment.session_id}\n"
                         f"Mode: {source}\n"
                         f"Rekeyed: {'yes' if attachment.rekeyed else 'no'}\n"
-                        f"Stored at: {attachment.target_file}"
+                        f"Stored at: {attachment.target_file}\n\n"
+                        "Quick command:\n"
+                        f"/attachsession {attachment.session_id}"
                     ),
                 )
             elif command == "/exportvscode":
@@ -342,11 +350,16 @@ class CodexTelegramBot:
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
                     text=(
-                        f"VSCode view copy created from local chat '{alias}'.\n"
+                        f"VSCode view copy created from local chat '{alias}'.\n\n"
                         f"Source session id: {clone.source_session_id}\n"
                         f"Cloned session id: {clone.cloned_session_id}\n"
                         f"Thread name: {clone.thread_name}\n"
                         f"Rollout path: {clone.target_file}\n"
+                        "\n"
+                        "Quick commands:\n"
+                        f"/attachsession {clone.cloned_session_id}\n"
+                        f"/deletevscodecopy {clone.cloned_session_id}\n"
+                        "\n"
                         "For reliability, refresh or reopen VSCode before switching threads."
                     ),
                 )
@@ -573,28 +586,51 @@ class CodexTelegramBot:
         active_account = self.accounts.get_active_account_name()
         queue_size = self._jobs.qsize()
         busy = "yes" if self._worker_busy.is_set() else "no"
-        session_id = thread.get("session_id") or "not started"
+        session_id = self._session_id_value(thread)
         last_account = thread.get("last_account") or "unknown"
+        quick_commands = [f"/use {active_alias}"]
+        attach_command = self._attach_command_for_session(thread.get("session_id"))
+        if attach_command is not None:
+            quick_commands.append(attach_command)
+        quick_commands.append("/clonevscode")
+        quick_commands.append("/threads")
         return (
-            f"Active local chat: {active_alias}\n"
+            "Status\n\n"
+            f"Local chat: {active_alias}\n"
             f"Session id: {session_id}\n"
-            f"Last account for this chat: {last_account}\n"
+            f"Last account: {last_account}\n\n"
+            "Codex settings\n"
             f"Model: {self._display_setting(thread.get('model'))}\n"
             f"Reasoning: {self._display_setting(thread.get('reasoning_effort'))}\n"
-            f"Sandbox: {self._display_setting(thread.get('sandbox_mode'))}\n"
+            f"Sandbox: {self._display_setting(thread.get('sandbox_mode'))}\n\n"
+            "Runtime\n"
             f"Default account: {active_account}\n"
             f"Queue size: {queue_size}\n"
-            f"Worker busy: {busy}"
+            f"Worker busy: {busy}\n\n"
+            "Quick commands\n"
+            f"{'\n'.join(quick_commands)}"
         )
 
     def _threads_text(self, chat_id: int) -> str:
         active_alias, _, threads = self.state.list_threads(chat_id)
-        lines = ["Local chats:"]
-        for alias, thread in sorted(threads.items()):
+        lines = [f"Local chats ({len(threads)}):", ""]
+        ordered_threads = sorted(
+            threads.items(),
+            key=lambda item: (item[0] != active_alias, item[0].lower()),
+        )
+        for alias, thread in ordered_threads:
             marker = "active" if alias == active_alias else "idle"
-            session_id = thread.get("session_id") or "new"
+            session_id = self._session_id_value(thread)
             last_account = thread.get("last_account") or "-"
-            lines.append(f"- {alias} [{marker}] session={session_id} account={last_account}")
+            lines.append(f"[{marker}] {alias}")
+            lines.append(f"Session id: {session_id}")
+            lines.append(f"Last account: {last_account}")
+            lines.append("Quick commands:")
+            lines.append(f"/use {alias}")
+            attach_command = self._attach_command_for_session(thread.get("session_id"))
+            if attach_command is not None:
+                lines.append(attach_command)
+            lines.append("")
         return "\n".join(lines)
 
     def _settings_text(self, chat_id: int) -> str:
@@ -606,6 +642,36 @@ class CodexTelegramBot:
             f"- Sandbox: {self._display_setting(thread.get('sandbox_mode'))}\n"
             "These settings apply to the next Codex prompt for this chat."
         )
+
+    def _session_id_text(self, chat_id: int) -> str:
+        active_alias, thread = self.state.get_active_thread(chat_id)
+        session_id = thread.get("session_id")
+        if not isinstance(session_id, str) or not session_id.strip():
+            return (
+                f"Local chat: {active_alias}\n"
+                "Session id: not started yet.\n"
+                "Run /ask <text> first, then use /sessionid again."
+            )
+        session_id = session_id.strip()
+        return (
+            f"Local chat: {active_alias}\n"
+            f"Session id: {session_id}\n\n"
+            "Quick command:\n"
+            f"/attachsession {session_id}"
+        )
+
+    @staticmethod
+    def _session_id_value(thread: dict[str, Any]) -> str:
+        session_id = thread.get("session_id")
+        if isinstance(session_id, str) and session_id.strip():
+            return session_id.strip()
+        return "not started"
+
+    @staticmethod
+    def _attach_command_for_session(session_id: object) -> str | None:
+        if isinstance(session_id, str) and session_id.strip():
+            return f"/attachsession {session_id.strip()}"
+        return None
 
     @staticmethod
     def _display_setting(value: object) -> str:
@@ -783,7 +849,8 @@ class CodexTelegramBot:
         return {
             "keyboard": [
                 [{"text": "Ask"}, {"text": "Status"}, {"text": "Threads"}],
-                [{"text": "Settings"}, {"text": "New chat"}, {"text": "Full access"}],
+                [{"text": "Settings"}, {"text": "Session ID"}, {"text": "New chat"}],
+                [{"text": "Full access"}],
             ],
             "resize_keyboard": True,
             "is_persistent": True,
@@ -798,6 +865,7 @@ class CodexTelegramBot:
             "status": "/status",
             "threads": "/threads",
             "settings": "/settings",
+            "session id": "/sessionid",
             "new chat": "/newchat",
             "full access": "/fullaccess",
         }
@@ -812,6 +880,7 @@ class CodexTelegramBot:
             "/settings - show Codex model, reasoning, and sandbox overrides for the active local chat\n"
             "/switch <account> - change default account for future runs\n"
             "/status - show status for the current local chat\n"
+            "/sessionid (or /sid) - show active session id with a ready /attachsession command\n"
             "/threads - list local chats\n"
             "/attachsession <session_id_or_path> - bind an existing Codex session to the current local chat\n"
             "/exportvscode [alias] - safely expose the local chat in VSCode without overwriting existing sessions\n"

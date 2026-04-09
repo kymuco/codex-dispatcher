@@ -93,6 +93,7 @@ python -m codex_dispatcher C:\path\to\codex-dispatcher\config.json
 - `/accounts`: list accounts and show the active one
 - `/switch <account>`: manually choose the account for future runs
 - `/status`: show the active local chat, `session_id`, queue, and active account
+- `/sessionid` (or `/sid`): show the active `session_id` and a ready `/attachsession` command
 - `/threads`: list local chats inside the current Telegram chat
 - `/newchat [alias]`: create and activate a new local chat
 - `/use <alias>`: switch to an existing local chat
