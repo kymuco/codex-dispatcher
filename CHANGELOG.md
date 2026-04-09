@@ -2,18 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on Keep a Changelog, and this project follows Semantic Versioning.
+This changelog follows a lightweight Keep a Changelog style and Semantic Versioning.
 
 ## [Unreleased]
 
-### Added
-- GitHub Actions CI workflow for cross-platform unit tests and package build.
-- Release process documentation in `RELEASE.md`.
+No unreleased changes.
 
-## [0.1.0] - 2026-04-09
+## [0.1.0] - 2026-04-10
 
 ### Added
-- Initial public release of Codex Dispatcher.
-- Telegram bot runtime for local Codex session orchestration and account switching.
-- Session management utilities, including VSCode view helpers and session purge tool.
-- Unit test suite for core flows.
+- Telegram bot runtime for local Codex prompting and session continuation (`exec` / `exec resume`).
+- Local chat aliases per Telegram chat with session tracking and switching.
+- Session utilities: attach existing sessions, VSCode copy flows (`clone`, `export`, `sync`), and purge tool.
+- Runtime per-chat controls for model, reasoning, and sandbox behavior.
+- `/health` command for compact bot readiness and runtime diagnostics.
+- Inline action buttons for `/status` and `/threads` safe navigation flows.
+
+### Changed
+- Onboarding and command discovery UX: compact `/start`, grouped `/help`, and mini-docs via `/help <command>`.
+- Operational command outputs were compacted for phone-first readability (`/status`, `/threads`, `/settings`, `/sessionid`).
+- Command validation and guidance use recovery-first error messages with clear next actions.
+
+### Reliability
+- Added startup preflight checks before polling (binary, workspace, state dir, account files).
+- Startup failures now stop early with concise actionable messages.
+- Expanded integration-style command routing tests and callback action coverage.
+- Cross-platform test stability improved for environments without `codex` in `PATH`.
+
+### Documentation
+- README rewritten around user scenarios, quick start, safety notes, and command map.
+- Added community files and GitHub contribution templates.
+- Added release notes and a short release checklist for `v0.1.0`.

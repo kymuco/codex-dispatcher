@@ -248,6 +248,8 @@ python -m unittest discover -s tests -v
 ## Project docs
 
 - `CHANGELOG.md`
+- `docs/release_notes_v0.1.0.md`
+- `docs/release_checklist.md`
 - `RELEASE.md`
 - `CONTRIBUTING.md`
 - `SECURITY.md`
