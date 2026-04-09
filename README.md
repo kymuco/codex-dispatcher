@@ -107,6 +107,33 @@ Plain text without a command behaves like `/ask`.
 - Auto-switching accounts is driven by text markers for limit detection. You can extend them in `config.json`.
 - For reliability, do not run other processes that modify `auth.json` in the same `state_dir` at the same time.
 
+## Troubleshooting
+
+1. `Config file not found ... Copy config.example.json to config.json first.`
+Use a valid config path:
+
+```powershell
+codex-dispatcher C:\path\to\codex-dispatcher\config.json
+```
+
+2. `auth.json not found for account ...`
+Check `accounts[].auth_file` in `config.json` and make sure each referenced file exists.
+
+3. `Codex binary was not found ...`
+Install Codex CLI and verify it is available in `PATH`, or set an explicit path in `codex.binary`.
+
+4. `Codex did not finish successfully.`
+Inspect the return code and command output in bot logs. Common causes are invalid sandbox mode for `resume`, missing auth files, or temporary Codex CLI failures.
+
+5. Auto-switch on limits did not trigger.
+Update `codex.limit_markers` in `config.json` to include the exact limit text returned by your Codex account.
+
+6. `/attachsession` reports `Session not found for reference ...`
+Use a valid session id from `session_index.jsonl` or a correct absolute path to a rollout `.jsonl` file.
+
+7. `/clonevscode` copy looks stale in VSCode.
+Create a fresh clone and reopen the thread in VSCode. If needed, remove the temporary copy with `/deletevscodecopy <cloned_session_id>`.
+
 ## Session Purge Utility
 
 If you need to remove a specific chat from any Codex home, use the standalone utility. No code changes are required; the target path is provided through `--home`.
