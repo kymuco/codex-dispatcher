@@ -3,6 +3,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -41,6 +42,7 @@ class CodexTelegramBot:
         self._worker_busy = threading.Event()
         self._last_update_id: int | None = None
         self._worker = threading.Thread(target=self._worker_loop, daemon=True, name="codex-worker")
+        self._confirmations: dict[str, dict[str, Any]] = {}
 
     def run_forever(self) -> None:
         if self._startup_repairs:
@@ -78,6 +80,11 @@ class CodexTelegramBot:
         if isinstance(update_id, int):
             self._last_update_id = update_id
 
+        callback_query = update.get("callback_query")
+        if isinstance(callback_query, dict):
+            self._handle_callback_query(callback_query)
+            return
+
         message = update.get("message")
         if not isinstance(message, dict):
             return
@@ -98,15 +105,135 @@ class CodexTelegramBot:
         if not isinstance(text, str) or not text.strip():
             return
 
+        text = text.strip()
+        quick_action_command = self._quick_action_command(text)
+        if quick_action_command == "__ask_hint__":
+            self.telegram.send_message(
+                chat_id=chat_id,
+                reply_to_message_id=message.get("message_id"),
+                text="Send any plain text message and I will run it as a Codex prompt.",
+                reply_markup=self._main_reply_keyboard(),
+            )
+            return
+        if isinstance(quick_action_command, str):
+            text = quick_action_command
+
         if text.startswith("/"):
-            self._handle_command(chat_id, message.get("message_id"), text.strip())
+            self._handle_command(chat_id, message.get("message_id"), text)
             return
 
         self._enqueue_prompt(
             chat_id=chat_id,
             reply_to_message_id=message.get("message_id"),
-            prompt=text.strip(),
+            prompt=text,
         )
+
+    def _handle_callback_query(self, callback_query: dict[str, Any]) -> None:
+        callback_query_id = callback_query.get("id")
+        data = callback_query.get("data")
+        message = callback_query.get("message")
+        if not isinstance(callback_query_id, str):
+            return
+        if not isinstance(data, str):
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="Unsupported action.",
+                show_alert=False,
+            )
+            return
+
+        chat_id: int | None = None
+        message_id: int | None = None
+        if isinstance(message, dict):
+            message_id_raw = message.get("message_id")
+            if isinstance(message_id_raw, int):
+                message_id = message_id_raw
+            chat = message.get("chat")
+            if isinstance(chat, dict):
+                chat_id_raw = chat.get("id")
+                if isinstance(chat_id_raw, int):
+                    chat_id = chat_id_raw
+
+        if chat_id is None:
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="Unsupported action context.",
+                show_alert=False,
+            )
+            return
+
+        if self.config.allowed_chat_ids and chat_id not in self.config.allowed_chat_ids:
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="This bot is not enabled for this chat.",
+                show_alert=True,
+            )
+            return
+
+        prefix, _, remainder = data.partition(":")
+        token, _, decision = remainder.partition(":")
+        if prefix != "cfm" or not token or decision not in {"yes", "no"}:
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="Unknown action.",
+                show_alert=False,
+            )
+            return
+
+        confirmation = self._confirmations.pop(token, None)
+        if confirmation is None:
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="This confirmation has expired.",
+                show_alert=False,
+            )
+            return
+
+        if int(confirmation.get("chat_id", -1)) != chat_id:
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="This action belongs to another chat.",
+                show_alert=True,
+            )
+            return
+
+        if message_id is not None:
+            try:
+                self.telegram.clear_inline_keyboard(chat_id=chat_id, message_id=message_id)
+            except TelegramApiError:
+                pass
+
+        if decision == "no":
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="Cancelled.",
+                show_alert=False,
+            )
+            self.telegram.send_message(
+                chat_id=chat_id,
+                reply_to_message_id=message_id,
+                text="Action cancelled.",
+            )
+            return
+
+        try:
+            self._apply_confirmation(chat_id=chat_id, reply_to_message_id=message_id, confirmation=confirmation)
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="Done.",
+                show_alert=False,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="Failed.",
+                show_alert=True,
+            )
+            self.telegram.send_message(
+                chat_id=chat_id,
+                reply_to_message_id=message_id,
+                text=str(exc),
+            )
 
     def _handle_command(self, chat_id: int, reply_to_message_id: int | None, text: str) -> None:
         command_token, _, args = text.partition(" ")
@@ -119,6 +246,7 @@ class CodexTelegramBot:
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
                     text=self._help_text(),
+                    reply_markup=self._main_reply_keyboard(),
                 )
             elif command == "/chatid":
                 self.telegram.send_message(
@@ -225,13 +353,14 @@ class CodexTelegramBot:
             elif command == "/deletevscodecopy":
                 if not args:
                     raise ValueError("Usage: /deletevscodecopy <cloned_session_id>")
-                deleted_file = self.sessions.delete_vscode_view_copy(args)
-                self.telegram.send_message(
+                self._request_confirmation(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
-                    text=(
-                        f"VSCode view copy deleted. Rollout path was: {deleted_file}\n"
-                        "For reliability, refresh or reopen VSCode before returning to the original thread."
+                    action="delete_vscode_copy",
+                    payload={"session_id": args},
+                    prompt=(
+                        "Delete temporary VSCode view copy?\n"
+                        f"Cloned session id: {args}"
                     ),
                 )
             elif command == "/newchat":
@@ -264,31 +393,59 @@ class CodexTelegramBot:
                     raise ValueError("Usage: /edit on|off|full|default")
                 sandbox_mode = self._parse_edit_mode(args)
                 alias, _ = self.state.get_active_thread(chat_id)
-                self.state.set_thread_sandbox_mode(chat_id, alias, sandbox_mode)
-                self.telegram.send_message(
-                    chat_id=chat_id,
-                    reply_to_message_id=reply_to_message_id,
-                    text=self._sandbox_confirmation_text(alias, sandbox_mode, shorthand=True),
-                )
+                if sandbox_mode == "danger-full-access":
+                    self._request_confirmation(
+                        chat_id=chat_id,
+                        reply_to_message_id=reply_to_message_id,
+                        action="set_fullaccess",
+                        payload={"alias": alias},
+                        prompt=(
+                            f"Enable full access for local chat '{alias}'?\n"
+                            "This disables sandboxing and approvals."
+                        ),
+                    )
+                else:
+                    self.state.set_thread_sandbox_mode(chat_id, alias, sandbox_mode)
+                    self.telegram.send_message(
+                        chat_id=chat_id,
+                        reply_to_message_id=reply_to_message_id,
+                        text=self._sandbox_confirmation_text(alias, sandbox_mode, shorthand=True),
+                    )
             elif command == "/fullaccess":
                 alias, _ = self.state.get_active_thread(chat_id)
-                self.state.set_thread_sandbox_mode(chat_id, alias, "danger-full-access")
-                self.telegram.send_message(
+                self._request_confirmation(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
-                    text=self._sandbox_confirmation_text(alias, "danger-full-access", shorthand=True),
+                    action="set_fullaccess",
+                    payload={"alias": alias},
+                    prompt=(
+                        f"Enable full access for local chat '{alias}'?\n"
+                        "This disables sandboxing and approvals."
+                    ),
                 )
             elif command == "/sandbox":
                 if not args:
                     raise ValueError("Usage: /sandbox <read-only|workspace-write|danger-full-access|default>")
                 sandbox_mode = self._parse_sandbox_mode(args)
                 alias, _ = self.state.get_active_thread(chat_id)
-                self.state.set_thread_sandbox_mode(chat_id, alias, sandbox_mode)
-                self.telegram.send_message(
-                    chat_id=chat_id,
-                    reply_to_message_id=reply_to_message_id,
-                    text=self._sandbox_confirmation_text(alias, sandbox_mode),
-                )
+                if sandbox_mode == "danger-full-access":
+                    self._request_confirmation(
+                        chat_id=chat_id,
+                        reply_to_message_id=reply_to_message_id,
+                        action="set_fullaccess",
+                        payload={"alias": alias},
+                        prompt=(
+                            f"Enable full access for local chat '{alias}'?\n"
+                            "This disables sandboxing and approvals."
+                        ),
+                    )
+                else:
+                    self.state.set_thread_sandbox_mode(chat_id, alias, sandbox_mode)
+                    self.telegram.send_message(
+                        chat_id=chat_id,
+                        reply_to_message_id=reply_to_message_id,
+                        text=self._sandbox_confirmation_text(alias, sandbox_mode),
+                    )
             elif command == "/model":
                 if not args:
                     raise ValueError("Usage: /model <name|default>")
@@ -524,6 +681,128 @@ class CodexTelegramBot:
             prefix = f"Sandbox for local chat '{alias}' set to: {mode}"
         return f"{prefix}.{warning}".strip()
 
+    def _request_confirmation(
+        self,
+        *,
+        chat_id: int,
+        reply_to_message_id: int | None,
+        action: str,
+        payload: dict[str, Any],
+        prompt: str,
+    ) -> None:
+        token = self._register_confirmation(chat_id=chat_id, action=action, payload=payload)
+        self.telegram.send_message(
+            chat_id=chat_id,
+            reply_to_message_id=reply_to_message_id,
+            text=f"{prompt}\n\nConfirm or cancel:",
+            reply_markup=self._confirmation_markup(token),
+        )
+
+    def _register_confirmation(
+        self,
+        *,
+        chat_id: int,
+        action: str,
+        payload: dict[str, Any],
+    ) -> str:
+        self._prune_confirmations()
+        token = uuid.uuid4().hex[:12]
+        self._confirmations[token] = {
+            "chat_id": chat_id,
+            "action": action,
+            "payload": payload,
+            "created_at": time.time(),
+        }
+        return token
+
+    def _prune_confirmations(self) -> None:
+        expiration_seconds = 3600
+        now = time.time()
+        stale_tokens = [
+            token
+            for token, confirmation in self._confirmations.items()
+            if now - float(confirmation.get("created_at", 0)) > expiration_seconds
+        ]
+        for token in stale_tokens:
+            self._confirmations.pop(token, None)
+
+    @staticmethod
+    def _confirmation_markup(token: str) -> dict[str, Any]:
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "Confirm", "callback_data": f"cfm:{token}:yes"},
+                    {"text": "Cancel", "callback_data": f"cfm:{token}:no"},
+                ]
+            ]
+        }
+
+    def _apply_confirmation(
+        self,
+        *,
+        chat_id: int,
+        reply_to_message_id: int | None,
+        confirmation: dict[str, Any],
+    ) -> None:
+        action = confirmation.get("action")
+        payload = confirmation.get("payload")
+        if not isinstance(action, str) or not isinstance(payload, dict):
+            raise ValueError("Invalid confirmation payload.")
+
+        if action == "set_fullaccess":
+            alias = payload.get("alias")
+            if not isinstance(alias, str) or not alias.strip():
+                raise ValueError("Missing alias for full access confirmation.")
+            self.state.set_thread_sandbox_mode(chat_id, alias, "danger-full-access")
+            self.telegram.send_message(
+                chat_id=chat_id,
+                reply_to_message_id=reply_to_message_id,
+                text=self._sandbox_confirmation_text(alias, "danger-full-access", shorthand=True),
+            )
+            return
+
+        if action == "delete_vscode_copy":
+            session_id = payload.get("session_id")
+            if not isinstance(session_id, str) or not session_id.strip():
+                raise ValueError("Missing cloned session id for delete action.")
+            deleted_file = self.sessions.delete_vscode_view_copy(session_id)
+            self.telegram.send_message(
+                chat_id=chat_id,
+                reply_to_message_id=reply_to_message_id,
+                text=(
+                    f"VSCode view copy deleted. Rollout path was: {deleted_file}\n"
+                    "For reliability, refresh or reopen VSCode before returning to the original thread."
+                ),
+            )
+            return
+
+        raise ValueError(f"Unknown confirmation action: {action}")
+
+    @staticmethod
+    def _main_reply_keyboard() -> dict[str, Any]:
+        return {
+            "keyboard": [
+                [{"text": "Ask"}, {"text": "Status"}, {"text": "Threads"}],
+                [{"text": "Settings"}, {"text": "New chat"}, {"text": "Full access"}],
+            ],
+            "resize_keyboard": True,
+            "is_persistent": True,
+            "input_field_placeholder": "Type a prompt or choose an action",
+        }
+
+    @staticmethod
+    def _quick_action_command(text: str) -> str | None:
+        normalized = text.strip().lower()
+        mapping = {
+            "ask": "__ask_hint__",
+            "status": "/status",
+            "threads": "/threads",
+            "settings": "/settings",
+            "new chat": "/newchat",
+            "full access": "/fullaccess",
+        }
+        return mapping.get(normalized)
+
     @staticmethod
     def _help_text() -> str:
         return (
@@ -548,5 +827,6 @@ class CodexTelegramBot:
             "/model <name|default> - choose the Codex model for the active local chat\n"
             "/reasoning <low|medium|high|xhigh|default> - set the reasoning effort for the active local chat\n"
             "/ask <text> - send a prompt to Codex\n\n"
+            "You can also use the Telegram keyboard buttons for quick actions.\n\n"
             "Plain text without a command is also sent to Codex."
         )

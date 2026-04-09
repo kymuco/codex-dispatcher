@@ -56,6 +56,7 @@ class TelegramClient:
         chat_id: int,
         text: str,
         reply_to_message_id: int | None = None,
+        reply_markup: dict[str, Any] | None = None,
     ) -> None:
         chunks = self._chunk_text(text)
         for index, chunk in enumerate(chunks):
@@ -65,7 +66,34 @@ class TelegramClient:
             }
             if reply_to_message_id is not None and index == 0:
                 payload["reply_to_message_id"] = reply_to_message_id
+            if reply_markup is not None and index == 0:
+                payload["reply_markup"] = reply_markup
             self._post("sendMessage", payload)
+
+    def answer_callback_query(
+        self,
+        *,
+        callback_query_id: str,
+        text: str | None = None,
+        show_alert: bool = False,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "callback_query_id": callback_query_id,
+            "show_alert": show_alert,
+        }
+        if text:
+            payload["text"] = text
+        self._post("answerCallbackQuery", payload)
+
+    def clear_inline_keyboard(self, *, chat_id: int, message_id: int) -> None:
+        self._post(
+            "editMessageReplyMarkup",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "reply_markup": {"inline_keyboard": []},
+            },
+        )
 
     @staticmethod
     def _chunk_text(text: str) -> list[str]:
