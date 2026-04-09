@@ -380,7 +380,7 @@ class SessionManagerTests(unittest.TestCase):
             self.assertIsNotNone(thread_row)
             assert thread_row is not None
             self.assertEqual(thread_row[0], clone.cloned_session_id)
-            self.assertEqual(thread_row[1], f"\\\\?\\{clone.target_file.resolve()}")
+            self.assertEqual(thread_row[1], manager._normalize_rollout_path(clone.target_file))
             self.assertEqual(thread_row[2], "vscode")
             self.assertEqual(thread_row[3], "TEMP VIEW - Temp inspect")
             cloned_lines = clone.target_file.read_text(encoding="utf-8").splitlines()
