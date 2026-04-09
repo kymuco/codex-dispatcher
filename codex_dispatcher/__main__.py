@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import argparse
 
+from . import __version__
 from .bot import CodexTelegramBot
 from .config import load_config
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Codex dispatcher.")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show version and exit.",
+    )
     parser.add_argument(
         "config",
         nargs="?",
