@@ -13,6 +13,7 @@ from codex_dispatcher.config import AccountConfig, AppConfig, CodexConfig
 class _FakeTelegramClient:
     def __init__(self) -> None:
         self.messages: list[dict[str, Any]] = []
+        self.callback_answers: list[dict[str, Any]] = []
 
     def send_message(
         self,
@@ -31,7 +32,8 @@ class _FakeTelegramClient:
             }
         )
 
-    def answer_callback_query(self, **_: Any) -> None:
+    def answer_callback_query(self, **payload: Any) -> None:
+        self.callback_answers.append(payload)
         return
 
     def clear_inline_keyboard(self, **_: Any) -> None:
@@ -114,6 +116,47 @@ class BotRoutingTests(unittest.TestCase):
                 "Prompt queued for local chat 'main'.",
                 bot.telegram.messages[-1]["text"],
             )
+
+    def test_callback_routing_status_health_action(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            bot = self._make_bot(Path(temp_dir_name))
+            callback_query = {
+                "id": "cb-1",
+                "data": "act:status:health",
+                "message": {
+                    "message_id": 55,
+                    "chat": {"id": 9020},
+                },
+            }
+
+            bot._handle_callback_query(callback_query)
+
+            self.assertIn("Health", bot.telegram.messages[-1]["text"])
+            self.assertTrue(bot.telegram.callback_answers)
+            self.assertEqual(bot.telegram.callback_answers[-1]["text"], "Done.")
+
+    def test_callback_routing_threads_use_alias_action(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            bot = self._make_bot(Path(temp_dir_name))
+            chat_id = 9030
+            bot.state.create_or_select_thread(chat_id, "main")
+            bot.state.create_or_select_thread(chat_id, "bugfix")
+            bot.state.set_active_alias(chat_id, "main")
+            callback_query = {
+                "id": "cb-2",
+                "data": "act:threads:use:bugfix",
+                "message": {
+                    "message_id": 56,
+                    "chat": {"id": chat_id},
+                },
+            }
+
+            bot._handle_callback_query(callback_query)
+
+            active_alias, _ = bot.state.get_active_thread(chat_id)
+            self.assertEqual(active_alias, "bugfix")
+            self.assertEqual(bot.telegram.messages[-1]["text"], "Switched to local chat: bugfix")
+            self.assertEqual(bot.telegram.callback_answers[-1]["text"], "Done.")
 
     def test_startup_checks_fail_early_with_actionable_message(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_name:

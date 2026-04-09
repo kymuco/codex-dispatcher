@@ -77,6 +77,61 @@ class BotUiTests(unittest.TestCase):
         self.assertEqual(third_row[0]["text"], "New chat")
         self.assertEqual(third_row[1]["text"], "Full access")
 
+    def test_status_actions_markup_contains_safe_buttons(self) -> None:
+        markup = CodexTelegramBot._status_actions_markup()
+        self.assertIn("inline_keyboard", markup)
+        row = markup["inline_keyboard"][0]
+        callback_data = [button["callback_data"] for button in row]
+        self.assertEqual(
+            callback_data,
+            ["act:status:sessionid", "act:status:threads", "act:status:health"],
+        )
+
+    def test_threads_actions_markup_includes_navigation_and_use_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            bot = self._make_bot(Path(temp_dir_name))
+            chat_id = 1201
+            bot.state.create_or_select_thread(chat_id, "main")
+            for index in range(1, 10):
+                alias = f"task-{index}"
+                bot.state.create_or_select_thread(chat_id, alias)
+            bot.state.set_active_alias(chat_id, "main")
+
+            markup = bot._threads_actions_markup(chat_id)
+
+            self.assertIn("inline_keyboard", markup)
+            rows = markup["inline_keyboard"]
+            self.assertEqual(rows[0][0]["callback_data"], "act:threads:sessionid")
+            self.assertEqual(rows[0][1]["callback_data"], "act:threads:status")
+            use_callbacks = [
+                button["callback_data"]
+                for row in rows[1:]
+                for button in row
+                if button["callback_data"].startswith("act:threads:use:")
+            ]
+            self.assertLessEqual(len(use_callbacks), bot._THREADS_USE_ACTIONS_LIMIT)
+            self.assertIn("act:threads:use:task-1", use_callbacks)
+
+    def test_threads_use_callback_data_respects_limit(self) -> None:
+        self.assertEqual(
+            CodexTelegramBot._threads_use_callback_data("bugfix"),
+            "act:threads:use:bugfix",
+        )
+        self.assertIsNone(CodexTelegramBot._threads_use_callback_data(""))
+        too_long_alias = "a" * 100
+        self.assertIsNone(CodexTelegramBot._threads_use_callback_data(too_long_alias))
+
+    def test_action_callback_namespace_maps_to_existing_commands(self) -> None:
+        self.assertEqual(
+            CodexTelegramBot._command_from_action_callback("status:health"),
+            "/health",
+        )
+        self.assertEqual(
+            CodexTelegramBot._command_from_action_callback("threads:use:bugfix"),
+            "/use bugfix",
+        )
+        self.assertIsNone(CodexTelegramBot._command_from_action_callback("cfm:abc:yes"))
+
     def test_attach_command_is_generated_only_for_valid_session_id(self) -> None:
         self.assertEqual(
             CodexTelegramBot._attach_command_for_session("abc-123"),

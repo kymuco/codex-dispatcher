@@ -29,6 +29,8 @@ class CodexJob:
 
 
 class CodexTelegramBot:
+    _THREADS_USE_ACTIONS_LIMIT = 6
+
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         data_dir = config.config_path.parent / "data"
@@ -255,6 +257,15 @@ class CodexTelegramBot:
             return
 
         prefix, _, remainder = data.partition(":")
+        if prefix == "act":
+            self._handle_action_callback(
+                callback_query_id=callback_query_id,
+                chat_id=chat_id,
+                reply_to_message_id=message_id,
+                action_data=remainder,
+            )
+            return
+
         token, _, decision = remainder.partition(":")
         if prefix != "cfm" or not token or decision not in {"yes", "no"}:
             self.telegram.answer_callback_query(
@@ -319,6 +330,61 @@ class CodexTelegramBot:
                 text=str(exc),
             )
 
+    def _handle_action_callback(
+        self,
+        *,
+        callback_query_id: str,
+        chat_id: int,
+        reply_to_message_id: int | None,
+        action_data: str,
+    ) -> None:
+        command = self._command_from_action_callback(action_data)
+        if command is None:
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="Unknown action.",
+                show_alert=False,
+            )
+            return
+
+        try:
+            self._handle_command(chat_id, reply_to_message_id, command)
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="Done.",
+                show_alert=False,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            self.telegram.answer_callback_query(
+                callback_query_id=callback_query_id,
+                text="Failed.",
+                show_alert=True,
+            )
+            self.telegram.send_message(
+                chat_id=chat_id,
+                reply_to_message_id=reply_to_message_id,
+                text=str(exc),
+            )
+
+    @staticmethod
+    def _command_from_action_callback(action_data: str) -> str | None:
+        mapping = {
+            "status:sessionid": "/sessionid",
+            "status:threads": "/threads",
+            "status:health": "/health",
+            "threads:sessionid": "/sessionid",
+            "threads:status": "/status",
+        }
+        direct = mapping.get(action_data)
+        if direct is not None:
+            return direct
+        prefix = "threads:use:"
+        if action_data.startswith(prefix):
+            alias = action_data[len(prefix) :].strip()
+            if alias:
+                return f"/use {alias}"
+        return None
+
     def _handle_command(self, chat_id: int, reply_to_message_id: int | None, text: str) -> None:
         command_token, _, args = text.partition(" ")
         command = self._resolve_command(command_token.split("@", 1)[0].lower())
@@ -372,6 +438,7 @@ class CodexTelegramBot:
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
                     text=self._status_text(chat_id),
+                    reply_markup=self._status_actions_markup(),
                 )
             elif command == "/health":
                 self.telegram.send_message(
@@ -390,6 +457,7 @@ class CodexTelegramBot:
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
                     text=self._threads_text(chat_id),
+                    reply_markup=self._threads_actions_markup(chat_id),
                 )
             elif command == "/attachsession":
                 if not args:
@@ -729,6 +797,67 @@ class CodexTelegramBot:
             f"Active local chat: {active_alias}\n"
             f"Session: {self._session_summary_text(thread)}"
         )
+
+    @staticmethod
+    def _status_actions_markup() -> dict[str, Any]:
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "Session ID", "callback_data": "act:status:sessionid"},
+                    {"text": "Threads", "callback_data": "act:status:threads"},
+                    {"text": "Health", "callback_data": "act:status:health"},
+                ]
+            ]
+        }
+
+    def _threads_actions_markup(self, chat_id: int) -> dict[str, Any]:
+        active_alias, _, threads = self.state.list_threads(chat_id)
+        rows: list[list[dict[str, Any]]] = [
+            [
+                {"text": "Session ID", "callback_data": "act:threads:sessionid"},
+                {"text": "Status", "callback_data": "act:threads:status"},
+            ]
+        ]
+        ordered_aliases = sorted(
+            threads.keys(),
+            key=lambda alias: (alias != active_alias, alias.lower()),
+        )
+        use_count = 0
+        for alias in ordered_aliases:
+            if alias == active_alias:
+                continue
+            if use_count >= self._THREADS_USE_ACTIONS_LIMIT:
+                break
+            callback_data = self._threads_use_callback_data(alias)
+            if callback_data is None:
+                continue
+            rows.append(
+                [
+                    {
+                        "text": f"Use {self._compact_alias_label(alias)}",
+                        "callback_data": callback_data,
+                    }
+                ]
+            )
+            use_count += 1
+        return {"inline_keyboard": rows}
+
+    @staticmethod
+    def _compact_alias_label(alias: str, *, max_length: int = 14) -> str:
+        trimmed = alias.strip()
+        if len(trimmed) <= max_length:
+            return trimmed
+        return f"{trimmed[: max_length - 3]}..."
+
+    @staticmethod
+    def _threads_use_callback_data(alias: str) -> str | None:
+        trimmed = alias.strip()
+        if not trimmed:
+            return None
+        callback_data = f"act:threads:use:{trimmed}"
+        if len(callback_data) > 64:
+            return None
+        return callback_data
 
     def _threads_text(self, chat_id: int) -> str:
         active_alias, _, threads = self.state.list_threads(chat_id)
