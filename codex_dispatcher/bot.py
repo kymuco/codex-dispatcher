@@ -601,61 +601,55 @@ class CodexTelegramBot:
         active_account = self.accounts.get_active_account_name()
         queue_size = self._jobs.qsize()
         busy = "yes" if self._worker_busy.is_set() else "no"
-        session_id = self._session_id_value(thread)
-        last_account = thread.get("last_account") or "unknown"
-        quick_commands = [f"/use {active_alias}"]
-        attach_command = self._attach_command_for_session(thread.get("session_id"))
-        if attach_command is not None:
-            quick_commands.append(attach_command)
-        quick_commands.append("/clonevscode")
-        quick_commands.append("/threads")
+        session = self._session_summary_text(thread)
+        last_account = self._last_account_text(thread)
+        default_account = active_account or "-"
         return (
             "Status\n\n"
-            f"Local chat: {active_alias}\n"
-            f"Session id: {session_id}\n"
+            f"Active local chat: {active_alias}\n"
+            f"Session: {session}\n"
             f"Last account: {last_account}\n\n"
-            "Codex settings\n"
+            "Settings\n"
             f"Model: {self._display_setting(thread.get('model'))}\n"
             f"Reasoning: {self._display_setting(thread.get('reasoning_effort'))}\n"
             f"Sandbox: {self._display_setting(thread.get('sandbox_mode'))}\n\n"
             "Runtime\n"
-            f"Default account: {active_account}\n"
-            f"Queue size: {queue_size}\n"
+            f"Default account: {default_account}\n"
+            f"Queue: {queue_size}\n"
             f"Worker busy: {busy}\n\n"
-            "Quick commands\n"
-            f"{'\n'.join(quick_commands)}"
+            "Next actions\n"
+            f"/use {active_alias}\n"
+            "/sessionid\n"
+            "/threads"
         )
 
     def _threads_text(self, chat_id: int) -> str:
         active_alias, _, threads = self.state.list_threads(chat_id)
-        lines = [f"Local chats ({len(threads)}):", ""]
+        lines = [f"Local chats ({len(threads)})", ""]
         ordered_threads = sorted(
             threads.items(),
             key=lambda item: (item[0] != active_alias, item[0].lower()),
         )
         for alias, thread in ordered_threads:
             marker = "active" if alias == active_alias else "idle"
-            session_id = self._session_id_value(thread)
-            last_account = thread.get("last_account") or "-"
+            session = self._session_summary_text(thread)
+            last_account = self._last_account_text(thread)
             lines.append(f"[{marker}] {alias}")
-            lines.append(f"Session id: {session_id}")
+            lines.append(f"Session: {session}")
             lines.append(f"Last account: {last_account}")
-            lines.append("Quick commands:")
             lines.append(f"/use {alias}")
-            attach_command = self._attach_command_for_session(thread.get("session_id"))
-            if attach_command is not None:
-                lines.append(attach_command)
             lines.append("")
         return "\n".join(lines)
 
     def _settings_text(self, chat_id: int) -> str:
         active_alias, thread = self.state.get_active_thread(chat_id)
         return (
-            f"Codex settings for local chat '{active_alias}':\n"
-            f"- Model: {self._display_setting(thread.get('model'))}\n"
-            f"- Reasoning: {self._display_setting(thread.get('reasoning_effort'))}\n"
-            f"- Sandbox: {self._display_setting(thread.get('sandbox_mode'))}\n"
-            "These settings apply to the next Codex prompt for this chat."
+            "Settings\n\n"
+            f"Active local chat: {active_alias}\n"
+            f"Model: {self._display_setting(thread.get('model'))}\n"
+            f"Reasoning: {self._display_setting(thread.get('reasoning_effort'))}\n"
+            f"Sandbox: {self._display_setting(thread.get('sandbox_mode'))}\n\n"
+            "Applies to the next Codex run in this local chat."
         )
 
     def _session_id_text(self, chat_id: int) -> str:
@@ -663,17 +657,32 @@ class CodexTelegramBot:
         session_id = thread.get("session_id")
         if not isinstance(session_id, str) or not session_id.strip():
             return (
-                f"Local chat: {active_alias}\n"
-                "Session id: not started yet.\n"
-                "Run /ask <text> first, then use /sessionid again."
+                "Session ID\n\n"
+                f"Active local chat: {active_alias}\n"
+                "Session: not started\n"
+                "Run /ask <text> to create a session."
             )
         session_id = session_id.strip()
         return (
-            f"Local chat: {active_alias}\n"
+            "Session ID\n\n"
+            f"Active local chat: {active_alias}\n"
             f"Session id: {session_id}\n\n"
-            "Quick command:\n"
             f"/attachsession {session_id}"
         )
+
+    @staticmethod
+    def _session_summary_text(thread: dict[str, Any]) -> str:
+        session_id = thread.get("session_id")
+        if isinstance(session_id, str) and session_id.strip():
+            return "started"
+        return "not started"
+
+    @staticmethod
+    def _last_account_text(thread: dict[str, Any]) -> str:
+        last_account = thread.get("last_account")
+        if isinstance(last_account, str) and last_account.strip():
+            return last_account.strip()
+        return "-"
 
     @staticmethod
     def _session_id_value(thread: dict[str, Any]) -> str:
