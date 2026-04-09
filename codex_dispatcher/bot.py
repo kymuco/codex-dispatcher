@@ -16,6 +16,10 @@ from .state import StateStore
 from .telegram_api import TelegramApiError, TelegramClient
 
 
+class StartupCheckError(RuntimeError):
+    pass
+
+
 @dataclass
 class CodexJob:
     chat_id: int
@@ -34,7 +38,7 @@ class CodexTelegramBot:
         self.accounts = AccountManager(config, self.state)
         self.sessions = SessionManager(config, self.state)
         self._startup_repairs = self.sessions.repair_colliding_local_sessions()
-        self.codex = CodexService(config, self.state, self.accounts)
+        self.codex: CodexService | None = None
         self.telegram = TelegramClient(config.telegram_token)
 
         self._jobs: queue.Queue[CodexJob] = queue.Queue()
@@ -45,6 +49,7 @@ class CodexTelegramBot:
         self._confirmations: dict[str, dict[str, Any]] = {}
 
     def run_forever(self) -> None:
+        self._run_startup_checks()
         if self._startup_repairs:
             print(f"Repaired {len(self._startup_repairs)} colliding local session(s).")
         self._sync_telegram_command_hints()
@@ -75,6 +80,78 @@ class CodexTelegramBot:
         if self._last_update_id is None:
             return None
         return self._last_update_id + 1
+
+    def _run_startup_checks(self) -> None:
+        report = self._startup_report()
+        issues = report["issues"]
+        if issues:
+            first_issue = issues[0]
+            raise StartupCheckError(f"Startup check failed: {first_issue}")
+        if self.codex is None:
+            self.codex = CodexService(self.config, self.state, self.accounts)
+
+    def _startup_report(self) -> dict[str, Any]:
+        issues: list[str] = []
+        codex_binary_status = "ok"
+        workspace_status = "ok"
+        accounts_status = "ok"
+
+        try:
+            CodexService._resolve_binary_path(self.config.codex.binary)
+        except FileNotFoundError:
+            codex_binary_status = "missing"
+            issues.append(
+                "Codex binary was not found.\n"
+                "Set codex.binary in config.json to a valid executable path."
+            )
+
+        cwd = self.config.codex.cwd
+        if not cwd.exists() or not cwd.is_dir():
+            workspace_status = "error"
+            issues.append(
+                f"Workspace directory is missing: {cwd}\n"
+                "Set codex.cwd in config.json to an existing directory."
+            )
+        try:
+            self.config.codex.state_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            workspace_status = "error"
+            issues.append(
+                f"State directory is not writable: {self.config.codex.state_dir}\n"
+                "Set codex.state_dir in config.json to a writable path."
+            )
+
+        if not self.config.accounts:
+            accounts_status = "missing"
+            issues.append(
+                "No Codex accounts are configured.\n"
+                "Add at least one account in config.json."
+            )
+        else:
+            for account in self.config.accounts:
+                if not account.auth_file.exists():
+                    accounts_status = "missing"
+                    issues.append(
+                        f"account '{account.name}' auth file is missing.\n"
+                        "Check the auth_file path in config.json."
+                    )
+                    break
+                missing_extra = next((path for path in account.extra_files if not path.exists()), None)
+                if missing_extra is not None:
+                    accounts_status = "missing"
+                    issues.append(
+                        f"account '{account.name}' extra file is missing: {missing_extra}\n"
+                        "Check account extra_files paths in config.json."
+                    )
+                    break
+
+        return {
+            "ready": not issues,
+            "issues": issues,
+            "codex_binary": codex_binary_status,
+            "workspace": workspace_status,
+            "accounts": accounts_status,
+        }
 
     def _sync_telegram_command_hints(self) -> None:
         try:
@@ -295,6 +372,12 @@ class CodexTelegramBot:
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
                     text=self._status_text(chat_id),
+                )
+            elif command == "/health":
+                self.telegram.send_message(
+                    chat_id=chat_id,
+                    reply_to_message_id=reply_to_message_id,
+                    text=self._health_text(chat_id),
                 )
             elif command == "/sessionid":
                 self.telegram.send_message(
@@ -555,6 +638,8 @@ class CodexTelegramBot:
 
             self._worker_busy.set()
             try:
+                if self.codex is None:
+                    raise RuntimeError("Bot is not ready. Startup checks were not completed.")
                 result = self.codex.run_prompt(chat_id=job.chat_id, alias=job.alias, prompt=job.prompt)
                 self._send_result(job, result)
             except Exception as exc:  # noqa: BLE001
@@ -621,6 +706,28 @@ class CodexTelegramBot:
             f"/use {active_alias}\n"
             "/sessionid\n"
             "/threads"
+        )
+
+    def _health_text(self, chat_id: int) -> str:
+        report = self._startup_report()
+        active_alias, thread = self.state.get_active_thread(chat_id)
+        active_account = self.accounts.get_active_account_name()
+        queue_size = self._jobs.qsize()
+        busy = "yes" if self._worker_busy.is_set() else "no"
+        bot_status = "ready" if report["ready"] else "not ready"
+        return (
+            "Health\n\n"
+            f"Bot: {bot_status}\n"
+            f"Codex binary: {report['codex_binary']}\n"
+            f"Workspace: {report['workspace']}\n"
+            f"Accounts: {report['accounts']}\n\n"
+            "Runtime\n"
+            f"Default account: {active_account}\n"
+            f"Queue: {queue_size}\n"
+            f"Worker busy: {busy}\n\n"
+            "Chat\n"
+            f"Active local chat: {active_alias}\n"
+            f"Session: {self._session_summary_text(thread)}"
         )
 
     def _threads_text(self, chat_id: int) -> str:
@@ -936,6 +1043,15 @@ class CodexTelegramBot:
                 "examples": ("/status",),
             },
             {
+                "command": "/health",
+                "menu": "health",
+                "summary": "show bot readiness and runtime health",
+                "usage": "/health",
+                "aliases": (),
+                "details": "Shows preflight readiness, queue/worker state, and active local chat summary.",
+                "examples": ("/health",),
+            },
+            {
                 "command": "/threads",
                 "menu": "chats",
                 "summary": "list local chats in this Telegram chat",
@@ -1138,6 +1254,7 @@ class CodexTelegramBot:
         section_map = {
             "/help": "quick_start",
             "/status": "quick_start",
+            "/health": "utility",
             "/newchat": "quick_start",
             "/ask": "quick_start",
             "/threads": "chats_sessions",

@@ -179,6 +179,7 @@ Use `/help` for grouped command list and `/help <command>` (or `/doc <command>`)
 
 ### Utility
 
+- `/health`
 - `/chatid`
 
 Typing `/` in Telegram also shows command hints published by the bot.

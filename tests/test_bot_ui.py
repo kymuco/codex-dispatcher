@@ -133,6 +133,7 @@ class BotUiTests(unittest.TestCase):
         self.assertIn("Runtime and accounts", help_text)
         self.assertIn("VSCode and session files", help_text)
         self.assertIn("Utility", help_text)
+        self.assertIn("/health - show bot readiness and runtime health", help_text)
         self.assertIn("/help - show command list or mini docs", help_text)
         self.assertIn("/attachsession - bind session id or rollout file to active chat", help_text)
         self.assertIn("Use /help <command> for mini docs.", help_text)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from . import __version__
-from .bot import CodexTelegramBot
+from .bot import CodexTelegramBot, StartupCheckError
 from .config import load_config
 
 
@@ -24,7 +24,10 @@ def main() -> None:
 
     config = load_config(args.config)
     bot = CodexTelegramBot(config)
-    bot.run_forever()
+    try:
+        bot.run_forever()
+    except StartupCheckError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 if __name__ == "__main__":
