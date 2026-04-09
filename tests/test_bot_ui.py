@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import sys
 import unittest
 from pathlib import Path
 
@@ -21,7 +22,7 @@ class BotUiTests(unittest.TestCase):
             polling_timeout_seconds=10,
             polling_retry_delay_seconds=1,
             codex=CodexConfig(
-                binary="codex",
+                binary=sys.executable,
                 cwd=temp_dir,
                 state_dir=temp_dir / "bot-home",
                 model=None,
