@@ -89,18 +89,26 @@ python -m codex_dispatcher C:\path\to\codex-dispatcher\config.json
 
 ## Bot Commands
 
-- `/help`: list commands
-- `/accounts`: list accounts and show the active one
-- `/switch <account>`: manually choose the account for future runs
-- `/status`: show the active local chat, `session_id`, queue, and active account
-- `/sessionid` (or `/sid`): show the active `session_id` and a ready `/attachsession` command
-- `/threads`: list local chats inside the current Telegram chat
-- `/newchat [alias]`: create and activate a new local chat
-- `/use <alias>`: switch to an existing local chat
-- `/resetchat`: clear the active local chat's `session_id`
-- `/ask <text>`: send a prompt to Codex
+- `/help [command]` or `/doc [command]`: list commands or open mini docs for one command
+- `/status` or `/state`: show active local chat, `session_id`, queue, and runtime state
+- `/threads` or `/chats`: list local chats in the current Telegram chat
+- `/sessionid` or `/sid`: show current `session_id` and ready `/attachsession` command
+- `/newchat [alias]` or `/new [alias]`: create and activate a local chat
+- `/use <alias>` or `/chat <alias>`: switch to an existing local chat
+- `/resetchat` or `/reset`: clear active local chat `session_id`
+- `/accounts` or `/accs`: list configured accounts
+- `/switch <account>` or `/account <account>`: set default account
+- `/attachsession <session_id_or_path>` or `/attach ...`: bind existing Codex session
+- `/clonevscode [title]` or `/clone [title]`: create temporary VSCode view copy
+- `/deletevscodecopy <cloned_session_id>` or `/deletecopy ...`: delete temporary VSCode view copy
+- `/edit on|off|full|default`: quick file-edit toggle
+- `/sandbox ...` or `/mode ...`: explicit sandbox mode
+- `/fullaccess` or `/full`: enable `danger-full-access` (with confirmation)
+- `/ask <text>` or `/q <text>`: send a prompt to Codex
 
 Plain text without a command behaves like `/ask`.
+
+The bot also publishes Telegram command hints, so typing `/` shows suggested commands with short descriptions.
 
 ## Limits
 

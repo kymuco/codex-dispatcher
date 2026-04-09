@@ -47,6 +47,7 @@ class CodexTelegramBot:
     def run_forever(self) -> None:
         if self._startup_repairs:
             print(f"Repaired {len(self._startup_repairs)} colliding local session(s).")
+        self._sync_telegram_command_hints()
         self._worker.start()
         print("Codex Telegram bot is running. Press Ctrl+C to stop.")
         try:
@@ -74,6 +75,12 @@ class CodexTelegramBot:
         if self._last_update_id is None:
             return None
         return self._last_update_id + 1
+
+    def _sync_telegram_command_hints(self) -> None:
+        try:
+            self.telegram.set_my_commands(commands=self._telegram_command_hints())
+        except TelegramApiError as exc:
+            print(f"Failed to sync Telegram command hints: {exc}")
 
     def _handle_update(self, update: dict[str, Any]) -> None:
         update_id = update.get("update_id")
@@ -237,15 +244,23 @@ class CodexTelegramBot:
 
     def _handle_command(self, chat_id: int, reply_to_message_id: int | None, text: str) -> None:
         command_token, _, args = text.partition(" ")
-        command = command_token.split("@", 1)[0].lower()
+        command = self._resolve_command(command_token.split("@", 1)[0].lower())
         args = args.strip()
 
         try:
-            if command in {"/start", "/help"}:
+            if command == "/start":
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
                     text=self._help_text(),
+                    reply_markup=self._main_reply_keyboard(),
+                )
+            elif command == "/help":
+                help_text = self._command_help_text(args) if args else self._help_text()
+                self.telegram.send_message(
+                    chat_id=chat_id,
+                    reply_to_message_id=reply_to_message_id,
+                    text=help_text,
                     reply_markup=self._main_reply_keyboard(),
                 )
             elif command == "/chatid":
@@ -268,7 +283,7 @@ class CodexTelegramBot:
                 )
             elif command == "/switch":
                 if not args:
-                    raise ValueError("Usage: /switch <account>")
+                    raise ValueError(self._usage_error("/switch"))
                 self.accounts.set_active_account(args)
                 self.telegram.send_message(
                     chat_id=chat_id,
@@ -281,7 +296,7 @@ class CodexTelegramBot:
                     reply_to_message_id=reply_to_message_id,
                     text=self._status_text(chat_id),
                 )
-            elif command in {"/sessionid", "/sid"}:
+            elif command == "/sessionid":
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -295,7 +310,7 @@ class CodexTelegramBot:
                 )
             elif command == "/attachsession":
                 if not args:
-                    raise ValueError("Usage: /attachsession <session_id_or_path>")
+                    raise ValueError(self._usage_error("/attachsession"))
                 alias, _ = self.state.get_active_thread(chat_id)
                 attachment = self.sessions.attach_to_alias(
                     chat_id=chat_id,
@@ -365,7 +380,7 @@ class CodexTelegramBot:
                 )
             elif command == "/deletevscodecopy":
                 if not args:
-                    raise ValueError("Usage: /deletevscodecopy <cloned_session_id>")
+                    raise ValueError(self._usage_error("/deletevscodecopy"))
                 self._request_confirmation(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -386,7 +401,7 @@ class CodexTelegramBot:
                 )
             elif command == "/use":
                 if not args:
-                    raise ValueError("Usage: /use <alias>")
+                    raise ValueError(self._usage_error("/use"))
                 self.state.set_active_alias(chat_id, args)
                 self.telegram.send_message(
                     chat_id=chat_id,
@@ -403,7 +418,7 @@ class CodexTelegramBot:
                 )
             elif command == "/edit":
                 if not args:
-                    raise ValueError("Usage: /edit on|off|full|default")
+                    raise ValueError(self._usage_error("/edit"))
                 sandbox_mode = self._parse_edit_mode(args)
                 alias, _ = self.state.get_active_thread(chat_id)
                 if sandbox_mode == "danger-full-access":
@@ -438,7 +453,7 @@ class CodexTelegramBot:
                 )
             elif command == "/sandbox":
                 if not args:
-                    raise ValueError("Usage: /sandbox <read-only|workspace-write|danger-full-access|default>")
+                    raise ValueError(self._usage_error("/sandbox"))
                 sandbox_mode = self._parse_sandbox_mode(args)
                 alias, _ = self.state.get_active_thread(chat_id)
                 if sandbox_mode == "danger-full-access":
@@ -461,7 +476,7 @@ class CodexTelegramBot:
                     )
             elif command == "/model":
                 if not args:
-                    raise ValueError("Usage: /model <name|default>")
+                    raise ValueError(self._usage_error("/model"))
                 model = self._parse_optional_value(args)
                 alias, _ = self.state.get_active_thread(chat_id)
                 self.state.set_thread_model(chat_id, alias, model)
@@ -472,7 +487,7 @@ class CodexTelegramBot:
                 )
             elif command == "/reasoning":
                 if not args:
-                    raise ValueError("Usage: /reasoning <low|medium|high|xhigh|default>")
+                    raise ValueError(self._usage_error("/reasoning"))
                 reasoning_effort = self._parse_reasoning_effort(args)
                 alias, _ = self.state.get_active_thread(chat_id)
                 self.state.set_thread_reasoning_effort(chat_id, alias, reasoning_effort)
@@ -483,7 +498,7 @@ class CodexTelegramBot:
                 )
             elif command == "/ask":
                 if not args:
-                    raise ValueError("Usage: /ask <text>")
+                    raise ValueError(self._usage_error("/ask"))
                 self._enqueue_prompt(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -493,7 +508,7 @@ class CodexTelegramBot:
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
-                    text="Unknown command. Use /help.",
+                    text="Unknown command. Use /help or /help <command>.",
                 )
         except KeyError as exc:
             self.telegram.send_message(
@@ -844,58 +859,332 @@ class CodexTelegramBot:
 
         raise ValueError(f"Unknown confirmation action: {action}")
 
-    @staticmethod
-    def _main_reply_keyboard() -> dict[str, Any]:
+    @classmethod
+    def _main_reply_keyboard(cls) -> dict[str, Any]:
         return {
             "keyboard": [
-                [{"text": "Ask"}, {"text": "Status"}, {"text": "Threads"}],
-                [{"text": "Settings"}, {"text": "Session ID"}, {"text": "New chat"}],
-                [{"text": "Full access"}],
+                [{"text": "Ask"}, {"text": "Status"}, {"text": "Chats"}],
+                [{"text": "Settings"}, {"text": "Session ID"}, {"text": "Help"}],
+                [{"text": "New chat"}, {"text": "Full access"}],
             ],
             "resize_keyboard": True,
             "is_persistent": True,
             "input_field_placeholder": "Type a prompt or choose an action",
         }
 
-    @staticmethod
-    def _quick_action_command(text: str) -> str | None:
+    @classmethod
+    def _quick_action_command(cls, text: str) -> str | None:
         normalized = text.strip().lower()
         mapping = {
             "ask": "__ask_hint__",
             "status": "/status",
-            "threads": "/threads",
+            "chats": "/chats",
             "settings": "/settings",
             "session id": "/sessionid",
             "new chat": "/newchat",
+            "help": "/help",
             "full access": "/fullaccess",
         }
         return mapping.get(normalized)
 
-    @staticmethod
-    def _help_text() -> str:
+    @classmethod
+    def _command_docs(cls) -> tuple[dict[str, Any], ...]:
         return (
-            "Commands:\n"
-            "/chatid - show the current Telegram chat id\n"
-            "/accounts - list accounts\n"
-            "/settings - show Codex model, reasoning, and sandbox overrides for the active local chat\n"
-            "/switch <account> - change default account for future runs\n"
-            "/status - show status for the current local chat\n"
-            "/sessionid (or /sid) - show active session id with a ready /attachsession command\n"
-            "/threads - list local chats\n"
-            "/attachsession <session_id_or_path> - bind an existing Codex session to the current local chat\n"
-            "/exportvscode [alias] - safely expose the local chat in VSCode without overwriting existing sessions\n"
-            "/syncvscode [alias] - explicitly update an existing VSCode session with the current local chat\n"
-            "/clonevscode [title] - create a temporary full-history VSCode thread copy for viewing\n"
-            "/deletevscodecopy <cloned_session_id> - delete only a temporary VSCode view copy created by /clonevscode\n"
-            "/newchat [alias] - create a new local chat\n"
-            "/use <alias> - switch to an existing local chat\n"
-            "/resetchat - clear the current session id\n"
-            "/edit on|off|full|default - quick toggle for file editing access\n"
-            "/fullaccess - enable danger-full-access for the active local chat\n"
-            "/sandbox <read-only|workspace-write|danger-full-access|default> - set sandbox mode explicitly\n"
-            "/model <name|default> - choose the Codex model for the active local chat\n"
-            "/reasoning <low|medium|high|xhigh|default> - set the reasoning effort for the active local chat\n"
-            "/ask <text> - send a prompt to Codex\n\n"
-            "You can also use the Telegram keyboard buttons for quick actions.\n\n"
-            "Plain text without a command is also sent to Codex."
+            {
+                "command": "/help",
+                "menu": "help",
+                "summary": "show command list or mini docs",
+                "usage": "/help [command]",
+                "aliases": ("/doc",),
+                "details": "Open mini documentation for a specific command.",
+                "examples": ("/help", "/help chats", "/doc attach"),
+            },
+            {
+                "command": "/status",
+                "menu": "status",
+                "summary": "show active chat and runtime state",
+                "usage": "/status",
+                "aliases": ("/state",),
+                "details": "Shows active local chat, session id, account, model, reasoning, sandbox, and queue.",
+                "examples": ("/status",),
+            },
+            {
+                "command": "/threads",
+                "menu": "chats",
+                "summary": "list local chats in this Telegram chat",
+                "usage": "/threads",
+                "aliases": ("/chats",),
+                "details": "Displays all local chats with quick commands to switch or attach.",
+                "examples": ("/threads", "/chats"),
+            },
+            {
+                "command": "/sessionid",
+                "menu": "sessionid",
+                "summary": "show active session id and attach command",
+                "usage": "/sessionid",
+                "aliases": ("/sid",),
+                "details": "Returns the current session id for the active local chat.",
+                "examples": ("/sessionid", "/sid"),
+            },
+            {
+                "command": "/newchat",
+                "menu": "new",
+                "summary": "create and activate a local chat",
+                "usage": "/newchat [alias]",
+                "aliases": ("/new",),
+                "details": "Without alias, creates a timestamped local chat.",
+                "examples": ("/newchat", "/new release-notes"),
+            },
+            {
+                "command": "/use",
+                "menu": "use",
+                "summary": "switch to an existing local chat",
+                "usage": "/use <alias>",
+                "aliases": ("/chat",),
+                "details": "Changes active local chat in the current Telegram chat.",
+                "examples": ("/use main", "/chat bugfix"),
+            },
+            {
+                "command": "/resetchat",
+                "menu": "reset",
+                "summary": "clear active session id",
+                "usage": "/resetchat",
+                "aliases": ("/reset",),
+                "details": "Keeps chat alias but resets session id; next prompt starts a new Codex session.",
+                "examples": ("/resetchat", "/reset"),
+            },
+            {
+                "command": "/ask",
+                "menu": "ask",
+                "summary": "send prompt to Codex",
+                "usage": "/ask <text>",
+                "aliases": ("/q",),
+                "details": "Plain text messages without slash behave the same as /ask.",
+                "examples": ("/ask explain this module", "/q run tests"),
+            },
+            {
+                "command": "/accounts",
+                "menu": "accounts",
+                "summary": "list configured Codex accounts",
+                "usage": "/accounts",
+                "aliases": ("/accs",),
+                "details": "Shows account names and which one is active by default.",
+                "examples": ("/accounts", "/accs"),
+            },
+            {
+                "command": "/switch",
+                "menu": "account",
+                "summary": "change default Codex account",
+                "usage": "/switch <account>",
+                "aliases": ("/account",),
+                "details": "Sets the default account for future runs in this bot state.",
+                "examples": ("/switch acc2", "/account acc1"),
+            },
+            {
+                "command": "/settings",
+                "menu": "settings",
+                "summary": "show model/reasoning/sandbox overrides",
+                "usage": "/settings",
+                "aliases": ("/prefs",),
+                "details": "Prints Codex setting overrides for the active local chat.",
+                "examples": ("/settings", "/prefs"),
+            },
+            {
+                "command": "/model",
+                "menu": "model",
+                "summary": "set Codex model for active chat",
+                "usage": "/model <name|default>",
+                "aliases": (),
+                "details": "Use 'default' to clear chat-specific model override.",
+                "examples": ("/model gpt-5.4", "/model default"),
+            },
+            {
+                "command": "/reasoning",
+                "menu": "reasoning",
+                "summary": "set reasoning effort",
+                "usage": "/reasoning <low|medium|high|xhigh|default>",
+                "aliases": (),
+                "details": "Sets reasoning level for future prompts in this local chat.",
+                "examples": ("/reasoning high", "/reasoning default"),
+            },
+            {
+                "command": "/sandbox",
+                "menu": "mode",
+                "summary": "set sandbox mode",
+                "usage": "/sandbox <read-only|workspace-write|danger-full-access|default>",
+                "aliases": ("/mode",),
+                "details": "Use danger-full-access only when you trust the task and environment.",
+                "examples": ("/sandbox workspace-write", "/mode read-only"),
+            },
+            {
+                "command": "/edit",
+                "menu": "edit",
+                "summary": "quick file-edit toggle",
+                "usage": "/edit on|off|full|default",
+                "aliases": (),
+                "details": "Shortcut for common sandbox modes: on=workspace-write, off=read-only, full=danger-full-access.",
+                "examples": ("/edit on", "/edit full"),
+            },
+            {
+                "command": "/fullaccess",
+                "menu": "full",
+                "summary": "enable danger-full-access",
+                "usage": "/fullaccess",
+                "aliases": ("/full",),
+                "details": "Requests confirmation because this disables sandbox protections.",
+                "examples": ("/fullaccess", "/full"),
+            },
+            {
+                "command": "/attachsession",
+                "menu": "attach",
+                "summary": "bind session id or rollout file to active chat",
+                "usage": "/attachsession <session_id_or_path>",
+                "aliases": ("/attach",),
+                "details": "Lets you resume an existing Codex session from home index or rollout file path.",
+                "examples": ("/attachsession 019d....", "/attach C:\\path\\to\\rollout.jsonl"),
+            },
+            {
+                "command": "/clonevscode",
+                "menu": "clone",
+                "summary": "create a temporary VSCode view copy",
+                "usage": "/clonevscode [title]",
+                "aliases": ("/clone",),
+                "details": "Creates a separate copy for safe viewing in VSCode without touching original local chat data.",
+                "examples": ("/clonevscode", "/clone temp-inspect"),
+            },
+            {
+                "command": "/deletevscodecopy",
+                "menu": "deletecopy",
+                "summary": "delete temporary VSCode view copy",
+                "usage": "/deletevscodecopy <cloned_session_id>",
+                "aliases": ("/deletecopy",),
+                "details": "Deletes only cloned temporary copy created by clone commands.",
+                "examples": ("/deletevscodecopy 019d....", "/deletecopy 019d...."),
+            },
+            {
+                "command": "/exportvscode",
+                "menu": "exportvscode",
+                "summary": "copy local chat to VSCode home safely",
+                "usage": "/exportvscode [alias]",
+                "aliases": (),
+                "details": "Will not overwrite an existing VSCode session with the same id.",
+                "examples": ("/exportvscode", "/exportvscode main"),
+            },
+            {
+                "command": "/syncvscode",
+                "menu": "syncvscode",
+                "summary": "force update VSCode copy from local chat",
+                "usage": "/syncvscode [alias]",
+                "aliases": (),
+                "details": "Explicitly overwrites existing VSCode copy for that session id.",
+                "examples": ("/syncvscode", "/syncvscode release"),
+            },
+            {
+                "command": "/chatid",
+                "menu": "chatid",
+                "summary": "show current Telegram chat id",
+                "usage": "/chatid",
+                "aliases": ("/id",),
+                "details": "Useful when setting allowed_chat_ids in config.",
+                "examples": ("/chatid", "/id"),
+            },
         )
+
+    @classmethod
+    def _command_doc_map(cls) -> dict[str, dict[str, Any]]:
+        return {str(doc["command"]): doc for doc in cls._command_docs()}
+
+    @classmethod
+    def _command_aliases(cls) -> dict[str, str]:
+        aliases: dict[str, str] = {}
+        for doc in cls._command_docs():
+            command = str(doc["command"]).lower()
+            aliases[command] = command
+            for alias in doc.get("aliases", ()):
+                aliases[str(alias).lower()] = command
+        return aliases
+
+    @classmethod
+    def _resolve_command(cls, command: str) -> str:
+        normalized = command.strip().lower()
+        return cls._command_aliases().get(normalized, normalized)
+
+    @classmethod
+    def _usage_error(cls, command: str) -> str:
+        usage = cls._command_usage(command)
+        return f"Usage: {usage}\nTip: /help {command}"
+
+    @classmethod
+    def _command_usage(cls, command: str) -> str:
+        canonical = cls._resolve_command(command)
+        doc = cls._command_doc_map().get(canonical)
+        if not isinstance(doc, dict):
+            return canonical
+        return str(doc.get("usage", canonical))
+
+    @classmethod
+    def _command_help_text(cls, raw_ref: str) -> str:
+        target = raw_ref.strip().split(" ", 1)[0].strip().lower()
+        if not target:
+            return cls._help_text()
+        if not target.startswith("/"):
+            target = f"/{target}"
+        canonical = cls._resolve_command(target)
+        doc = cls._command_doc_map().get(canonical)
+        if not isinstance(doc, dict):
+            return (
+                f"Command not found: {raw_ref}\n"
+                "Use /help to list commands."
+            )
+
+        aliases = doc.get("aliases", ())
+        alias_text = ", ".join(str(alias) for alias in aliases) if aliases else "-"
+        lines = [
+            f"Command: {canonical}",
+            f"Purpose: {doc['summary']}",
+            f"Usage: {doc['usage']}",
+            f"Aliases: {alias_text}",
+            f"Details: {doc['details']}",
+        ]
+        examples = doc.get("examples", ())
+        if examples:
+            lines.append("Examples:")
+            for example in examples:
+                lines.append(str(example))
+        return "\n".join(lines)
+
+    @classmethod
+    def _telegram_command_hints(cls) -> list[dict[str, str]]:
+        hints: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for doc in cls._command_docs():
+            raw_name = str(doc.get("menu") or str(doc["command"]).lstrip("/")).lower()
+            command_name = raw_name.replace("-", "_")
+            if command_name in seen:
+                continue
+            seen.add(command_name)
+            hints.append(
+                {
+                    "command": command_name,
+                    "description": str(doc["summary"])[:256],
+                }
+            )
+        return hints
+
+    @classmethod
+    def _help_text(cls) -> str:
+        lines = ["Commands (use /help <command> for mini docs):"]
+        for doc in cls._command_docs():
+            aliases = doc.get("aliases", ())
+            alias_suffix = ""
+            if aliases:
+                alias_suffix = f" | aliases: {', '.join(str(alias) for alias in aliases)}"
+            lines.append(f"{doc['command']} - {doc['summary']}{alias_suffix}")
+        lines.extend(
+            [
+                "",
+                "You can also use the Telegram keyboard buttons for quick actions.",
+                "Plain text without a command is also sent to Codex.",
+            ]
+        )
+        return "\n".join(lines)

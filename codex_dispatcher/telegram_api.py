@@ -50,6 +50,9 @@ class TelegramClient:
         result = self._post("getUpdates", payload)
         return result if isinstance(result, list) else []
 
+    def set_my_commands(self, *, commands: list[dict[str, str]]) -> None:
+        self._post("setMyCommands", {"commands": commands})
+
     def send_message(
         self,
         *,
