@@ -508,13 +508,13 @@ class CodexTelegramBot:
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
-                    text="Unknown command. Use /help or /help <command>.",
+                    text=self._unknown_command_text(),
                 )
         except KeyError as exc:
             self.telegram.send_message(
                 chat_id=chat_id,
                 reply_to_message_id=reply_to_message_id,
-                text=f"Unknown local chat or account: {exc}",
+                text=self._unknown_reference_text(command, exc),
             )
         except ValueError as exc:
             self.telegram.send_message(
@@ -526,7 +526,7 @@ class CodexTelegramBot:
             self.telegram.send_message(
                 chat_id=chat_id,
                 reply_to_message_id=reply_to_message_id,
-                text=str(exc),
+                text=self._file_not_found_text(command, exc),
             )
 
     def _enqueue_prompt(self, *, chat_id: int, reply_to_message_id: int | None, prompt: str) -> None:
@@ -706,18 +706,25 @@ class CodexTelegramBot:
             return None
         return value
 
-    @staticmethod
-    def _parse_reasoning_effort(raw_value: str) -> str | None:
-        value = raw_value.strip().lower()
+    @classmethod
+    def _parse_reasoning_effort(cls, raw_value: str) -> str | None:
+        raw = raw_value.strip()
+        value = raw.lower()
         if value in {"default", "clear", "off", "none"}:
             return None
         if value not in {"low", "medium", "high", "xhigh"}:
-            raise ValueError("Usage: /reasoning <low|medium|high|xhigh|default>")
+            raise ValueError(
+                cls._invalid_argument_text(
+                    command="/reasoning",
+                    problem=f"Invalid reasoning level: {raw}.",
+                )
+            )
         return value
 
-    @staticmethod
-    def _parse_sandbox_mode(raw_value: str) -> str | None:
-        value = raw_value.strip().lower()
+    @classmethod
+    def _parse_sandbox_mode(cls, raw_value: str) -> str | None:
+        raw = raw_value.strip()
+        value = raw.lower()
         if value in {"default", "clear", "none"}:
             return None
         if value in {"read-only", "read", "readonly", "off"}:
@@ -726,11 +733,17 @@ class CodexTelegramBot:
             return "workspace-write"
         if value in {"danger-full-access", "full", "danger", "unsafe"}:
             return "danger-full-access"
-        raise ValueError("Usage: /sandbox <read-only|workspace-write|danger-full-access|default>")
+        raise ValueError(
+            cls._invalid_argument_text(
+                command="/sandbox",
+                problem=f"Invalid sandbox mode: {raw}.",
+            )
+        )
 
-    @staticmethod
-    def _parse_edit_mode(raw_value: str) -> str | None:
-        value = raw_value.strip().lower()
+    @classmethod
+    def _parse_edit_mode(cls, raw_value: str) -> str | None:
+        raw = raw_value.strip()
+        value = raw.lower()
         if value in {"default", "clear", "none"}:
             return None
         if value in {"off", "read", "readonly", "read-only"}:
@@ -739,7 +752,12 @@ class CodexTelegramBot:
             return "workspace-write"
         if value in {"full", "danger", "danger-full-access"}:
             return "danger-full-access"
-        raise ValueError("Usage: /edit on|off|full|default")
+        raise ValueError(
+            cls._invalid_argument_text(
+                command="/edit",
+                problem=f"Invalid edit mode: {raw}.",
+            )
+        )
 
     @staticmethod
     def _setting_confirmation_text(alias: str, label: str, value: str | None) -> str:
@@ -941,6 +959,7 @@ class CodexTelegramBot:
                 "summary": "switch to an existing local chat",
                 "usage": "/use <alias>",
                 "aliases": ("/chat",),
+                "missing_arg": "Missing local chat alias.",
                 "details": "Changes active local chat in the current Telegram chat.",
                 "examples": ("/use main", "/chat bugfix"),
             },
@@ -959,6 +978,7 @@ class CodexTelegramBot:
                 "summary": "send prompt to Codex",
                 "usage": "/ask <text>",
                 "aliases": ("/q",),
+                "missing_arg": "Missing prompt text.",
                 "details": "Plain text messages without slash behave the same as /ask.",
                 "examples": ("/ask explain this module", "/q run tests"),
             },
@@ -977,6 +997,7 @@ class CodexTelegramBot:
                 "summary": "change default Codex account",
                 "usage": "/switch <account>",
                 "aliases": ("/account",),
+                "missing_arg": "Missing account name.",
                 "details": "Sets the default account for future runs in this bot state.",
                 "examples": ("/switch acc2", "/account acc1"),
             },
@@ -995,6 +1016,7 @@ class CodexTelegramBot:
                 "summary": "set Codex model for active chat",
                 "usage": "/model <name|default>",
                 "aliases": (),
+                "missing_arg": "Missing model name.",
                 "details": "Use 'default' to clear chat-specific model override.",
                 "examples": ("/model gpt-5.4", "/model default"),
             },
@@ -1004,6 +1026,7 @@ class CodexTelegramBot:
                 "summary": "set reasoning effort",
                 "usage": "/reasoning <low|medium|high|xhigh|default>",
                 "aliases": (),
+                "missing_arg": "Missing reasoning level.",
                 "details": "Sets reasoning level for future prompts in this local chat.",
                 "examples": ("/reasoning high", "/reasoning default"),
             },
@@ -1013,6 +1036,7 @@ class CodexTelegramBot:
                 "summary": "set sandbox mode",
                 "usage": "/sandbox <read-only|workspace-write|danger-full-access|default>",
                 "aliases": ("/mode",),
+                "missing_arg": "Missing sandbox mode.",
                 "details": "Use danger-full-access only when you trust the task and environment.",
                 "examples": ("/sandbox workspace-write", "/mode read-only"),
             },
@@ -1022,6 +1046,7 @@ class CodexTelegramBot:
                 "summary": "quick file-edit toggle",
                 "usage": "/edit on|off|full|default",
                 "aliases": (),
+                "missing_arg": "Missing edit mode.",
                 "details": "Shortcut for common sandbox modes: on=workspace-write, off=read-only, full=danger-full-access.",
                 "examples": ("/edit on", "/edit full"),
             },
@@ -1040,6 +1065,7 @@ class CodexTelegramBot:
                 "summary": "bind session id or rollout file to active chat",
                 "usage": "/attachsession <session_id_or_path>",
                 "aliases": ("/attach",),
+                "missing_arg": "Missing session reference.",
                 "details": "Lets you resume an existing Codex session from home index or rollout file path.",
                 "examples": ("/attachsession 019d....", "/attach C:\\path\\to\\rollout.jsonl"),
             },
@@ -1058,6 +1084,7 @@ class CodexTelegramBot:
                 "summary": "delete temporary VSCode view copy",
                 "usage": "/deletevscodecopy <cloned_session_id>",
                 "aliases": ("/deletecopy",),
+                "missing_arg": "Missing cloned session id.",
                 "details": "Deletes only cloned temporary copy created by clone commands.",
                 "examples": ("/deletevscodecopy 019d....", "/deletecopy 019d...."),
             },
@@ -1111,8 +1138,14 @@ class CodexTelegramBot:
 
     @classmethod
     def _usage_error(cls, command: str) -> str:
-        usage = cls._command_usage(command)
-        return f"Usage: {usage}\nTip: /help {command}"
+        canonical = cls._resolve_command(command)
+        doc = cls._command_doc_map().get(canonical, {})
+        problem = str(doc.get("missing_arg", "Missing required argument."))
+        return cls._missing_argument_text(
+            command=canonical,
+            problem=problem,
+            example=cls._command_example(canonical),
+        )
 
     @classmethod
     def _command_usage(cls, command: str) -> str:
@@ -1121,6 +1154,72 @@ class CodexTelegramBot:
         if not isinstance(doc, dict):
             return canonical
         return str(doc.get("usage", canonical))
+
+    @classmethod
+    def _command_example(cls, command: str) -> str | None:
+        canonical = cls._resolve_command(command)
+        doc = cls._command_doc_map().get(canonical)
+        if not isinstance(doc, dict):
+            return None
+        examples = doc.get("examples")
+        if not isinstance(examples, tuple) or not examples:
+            return None
+        first = examples[0]
+        return str(first) if isinstance(first, str) and first.strip() else None
+
+    @classmethod
+    def _help_ref(cls, command: str) -> str:
+        canonical = cls._resolve_command(command).strip()
+        if canonical.startswith("/"):
+            return canonical[1:]
+        return canonical or "help"
+
+    @classmethod
+    def _missing_argument_text(cls, *, command: str, problem: str, example: str | None = None) -> str:
+        lines = [
+            problem,
+            f"Use: {cls._command_usage(command)}",
+        ]
+        if example:
+            lines.append(f"Example: {example}")
+        lines.append(f"Help: /help {cls._help_ref(command)}")
+        return "\n".join(lines)
+
+    @classmethod
+    def _invalid_argument_text(cls, *, command: str, problem: str, example: str | None = None) -> str:
+        return cls._missing_argument_text(
+            command=command,
+            problem=problem,
+            example=example or cls._command_example(command),
+        )
+
+    @staticmethod
+    def _unknown_command_text() -> str:
+        return "Unknown command.\nUse /help for the command list."
+
+    @classmethod
+    def _unknown_reference_text(cls, command: str, exc: KeyError) -> str:
+        canonical = cls._resolve_command(command)
+        missing = str(exc).strip().strip("'\"")
+        if canonical == "/use":
+            prefix = f"Local chat not found: {missing}." if missing else "Local chat not found."
+            return f"{prefix}\nUse /threads to see available chats."
+        if canonical == "/switch":
+            prefix = f"Account not found: {missing}." if missing else "Account not found."
+            return f"{prefix}\nUse /accounts to see available accounts."
+        return "Requested item was not found.\nUse /help for available commands."
+
+    @classmethod
+    def _file_not_found_text(cls, command: str, _exc: FileNotFoundError) -> str:
+        canonical = cls._resolve_command(command)
+        if canonical == "/attachsession":
+            return cls._invalid_argument_text(
+                command="/attachsession",
+                problem="Session source not found.",
+            )
+        if canonical in {"/clonevscode", "/deletevscodecopy", "/exportvscode", "/syncvscode"}:
+            return "VSCode view copy not found.\nUse /clonevscode to create a fresh view."
+        return "File or path not found.\nCheck the path and try again."
 
     @classmethod
     def _command_help_text(cls, raw_ref: str) -> str:
