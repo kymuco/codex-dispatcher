@@ -110,11 +110,11 @@ Plain text without a command behaves like `/ask`.
 ## Troubleshooting
 
 1. `Config file not found ... Copy config.example.json to config.json first.`
-Use a valid config path:
+    Use a valid config path:
 
-```powershell
-codex-dispatcher C:\path\to\codex-dispatcher\config.json
-```
+    ```powershell
+    codex-dispatcher C:\path\to\codex-dispatcher\config.json
+    ```
 
 2. `auth.json not found for account ...`
 Check `accounts[].auth_file` in `config.json` and make sure each referenced file exists.
@@ -170,6 +170,13 @@ Before making changes, the utility creates a backup of affected files in `backup
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+## Project Docs
+
+- `CHANGELOG.md`: notable changes by version.
+- `RELEASE.md`: release checklist and tagging flow.
+- `CONTRIBUTING.md`: contribution guidelines for pull requests.
+- `SECURITY.md`: vulnerability reporting process.
 
 ## License
 
