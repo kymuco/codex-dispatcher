@@ -252,7 +252,7 @@ class CodexTelegramBot:
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
-                    text=self._help_text(),
+                    text=self._start_text(),
                     reply_markup=self._main_reply_keyboard(),
                 )
             elif command == "/help":
@@ -1188,3 +1188,18 @@ class CodexTelegramBot:
             ]
         )
         return "\n".join(lines)
+
+    @classmethod
+    def _start_text(cls) -> str:
+        return (
+            "Welcome. This bot lets you talk to local Codex from Telegram.\n\n"
+            "Quick start:\n"
+            "- Send any plain text message to run it as a Codex prompt\n"
+            "- /newchat (or /new) to create a local chat\n"
+            "- /threads (or /chats) to list local chats\n"
+            "- /use <alias> (or /chat <alias>) to switch local chat\n"
+            "- /status (or /state) to view current state\n"
+            "- /help to open full command docs\n\n"
+            "You can also use the keyboard buttons below for quick actions.\n"
+            "Plain text without a command is also sent to Codex."
+        )

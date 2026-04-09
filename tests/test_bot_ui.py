@@ -78,6 +78,14 @@ class BotUiTests(unittest.TestCase):
         self.assertIn("new", command_names)
         self.assertIn("deletecopy", command_names)
 
+    def test_start_text_is_concise_and_not_equal_to_help(self) -> None:
+        start_text = CodexTelegramBot._start_text()
+        help_text = CodexTelegramBot._help_text()
+        self.assertNotEqual(start_text, help_text)
+        self.assertIn("Quick start:", start_text)
+        self.assertIn("/help", start_text)
+        self.assertIn("Plain text without a command is also sent to Codex.", start_text)
+
 
 if __name__ == "__main__":
     unittest.main()

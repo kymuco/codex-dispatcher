@@ -89,6 +89,7 @@ python -m codex_dispatcher C:\path\to\codex-dispatcher\config.json
 
 ## Bot Commands
 
+- `/start`: compact onboarding message with quick-start actions
 - `/help [command]` or `/doc [command]`: list commands or open mini docs for one command
 - `/status` or `/state`: show active local chat, `session_id`, queue, and runtime state
 - `/threads` or `/chats`: list local chats in the current Telegram chat
