@@ -1,0 +1,30 @@
+{
+  "telegram_token": "123456:ci-smoke-token",
+  "allowed_chat_ids": [
+    123456789
+  ],
+  "polling_timeout_seconds": 25,
+  "polling_retry_delay_seconds": 3,
+  "codex": {
+    "binary": "python",
+    "cwd": ".",
+    "state_dir": ".",
+    "model": null,
+    "extra_args": [
+      "--skip-git-repo-check"
+    ],
+    "cli_auth_credentials_store": "file",
+    "auto_switch_on_limit": true,
+    "response_timeout_seconds": 30,
+    "limit_markers": [
+      "usage limit"
+    ]
+  },
+  "accounts": [
+    {
+      "name": "acc1",
+      "auth_file": "auth.json",
+      "extra_files": []
+    }
+  ]
+}

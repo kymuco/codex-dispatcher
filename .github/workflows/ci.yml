@@ -1,4 +1,4 @@
-name: CI
+name: CI Smoke
 
 on:
   push:
@@ -10,18 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  tests:
-    name: Unit Tests (${{ matrix.os }}, py${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-        python-version:
-          - "3.13"
-
+  windows-smoke:
+    name: Windows smoke (py3.13)
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,21 +20,30 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
 
       - name: Install package
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
 
+      - name: Validate config.example.json
+        run: |
+          python -c "import json, pathlib; p = pathlib.Path('config.example.json'); assert p.exists(), 'config.example.json is missing'; data = json.loads(p.read_text(encoding='utf-8')); required = ('telegram_token', 'codex', 'accounts'); missing = [k for k in required if k not in data]; assert not missing, f'Missing root fields: {missing}'; codex = data.get('codex', {}); codex_required = ('binary', 'cwd', 'state_dir', 'cli_auth_credentials_store'); codex_missing = [k for k in codex_required if not isinstance(codex.get(k), str) or not codex.get(k).strip()]; assert not codex_missing, f'Missing/invalid codex fields: {codex_missing}'; accounts = data.get('accounts'); assert isinstance(accounts, list) and accounts, 'accounts must be a non-empty list'; first = accounts[0] if isinstance(accounts[0], dict) else {}; assert isinstance(first.get('name'), str) and first['name'].strip(), 'first account requires name'; assert isinstance(first.get('auth_file'), str) and first['auth_file'].strip(), 'first account requires auth_file'"
+
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
-  build:
-    name: Build Package
+      - name: Smoke check (script)
+        run: python scripts/check_env.py tests/fixtures/ci/smoke_config.json
+
+      - name: Smoke check (module --check)
+        run: python -m codex_dispatcher --check tests/fixtures/ci/smoke_config.json
+
+  ubuntu-sanity:
+    name: Ubuntu sanity (py3.13)
     runs-on: ubuntu-latest
-    needs:
-      - tests
+    needs: windows-smoke
 
     steps:
       - name: Checkout
@@ -54,14 +54,10 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Build distributions
+      - name: Install package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install build
-          python -m build
+          python -m pip install -e .
 
-      - name: Upload dist artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/*
+      - name: Sanity smoke check
+        run: python -m codex_dispatcher --check tests/fixtures/ci/smoke_config.json
