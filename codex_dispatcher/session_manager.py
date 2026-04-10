@@ -359,13 +359,15 @@ class SessionManager:
         return unique_candidates
 
     def _find_session_file_in_home(self, home: Path, session_id: str) -> Path | None:
-        sessions_dir = home / "sessions"
-        if not sessions_dir.exists():
-            return None
+        from_threads = self._find_rollout_from_threads_table(home, session_id)
+        if from_threads is not None and from_threads.exists():
+            return from_threads
 
-        direct_matches = list(sessions_dir.rglob(f"*{session_id}.jsonl"))
-        if direct_matches:
-            return direct_matches[0]
+        sessions_dir = home / "sessions"
+        if sessions_dir.exists():
+            direct_matches = sorted(sessions_dir.rglob(f"*{session_id}.jsonl"))
+            if direct_matches:
+                return direct_matches[0]
 
         index_path = home / "session_index.jsonl"
         if not index_path.exists():
@@ -379,10 +381,40 @@ class SessionManager:
             except json.JSONDecodeError:
                 continue
             if entry.get("id") == session_id:
-                named_matches = list(sessions_dir.rglob(f"*{session_id}.jsonl"))
-                if named_matches:
-                    return named_matches[0]
+                if sessions_dir.exists():
+                    named_matches = sorted(sessions_dir.rglob(f"*{session_id}.jsonl"))
+                    if named_matches:
+                        return named_matches[0]
+                from_threads_retry = self._find_rollout_from_threads_table(home, session_id)
+                if from_threads_retry is not None and from_threads_retry.exists():
+                    return from_threads_retry
         return None
+
+    def _find_rollout_from_threads_table(self, home: Path, session_id: str) -> Path | None:
+        database_path = home / "state_5.sqlite"
+        if not database_path.exists():
+            return None
+
+        connection: sqlite3.Connection | None = None
+        try:
+            connection = sqlite3.connect(database_path)
+            cursor = connection.cursor()
+            if not self._table_exists(cursor, "threads"):
+                return None
+            cursor.execute("SELECT rollout_path FROM threads WHERE id = ? LIMIT 1", (session_id,))
+            row = cursor.fetchone()
+        except sqlite3.Error:
+            return None
+        finally:
+            if connection is not None:
+                connection.close()
+
+        if row is None or not isinstance(row[0], str):
+            return None
+        raw_rollout_path = row[0].strip()
+        if not raw_rollout_path:
+            return None
+        return Path(self._strip_extended_prefix(raw_rollout_path))
 
     def _extract_session_id_from_file(self, path: Path) -> str:
         with path.open("r", encoding="utf-8") as handle:
@@ -810,6 +842,10 @@ class SessionManager:
             connection.commit()
         finally:
             connection.close()
+
+    def _table_exists(self, cursor: sqlite3.Cursor, table: str) -> bool:
+        cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1", (table,))
+        return cursor.fetchone() is not None
 
     def _normalize_rollout_path(self, path: Path) -> str:
         return normalize_rollout_path(path)

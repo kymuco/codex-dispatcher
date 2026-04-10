@@ -47,6 +47,27 @@ class SessionManagerTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def _seed_minimal_threads_row(self, database_path: Path, *, session_id: str, rollout_path: str) -> None:
+        database_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(database_path)
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS threads (
+                    id TEXT PRIMARY KEY,
+                    rollout_path TEXT NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                "INSERT OR REPLACE INTO threads (id, rollout_path) VALUES (?, ?)",
+                (session_id, rollout_path),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
     def test_attach_from_file_imports_session_and_updates_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_name:
             temp_dir = Path(temp_dir_name)
@@ -158,6 +179,41 @@ class SessionManagerTests(unittest.TestCase):
             self.assertIn(attachment.session_id, index_contents)
             _, thread = state.get_active_thread(1)
             self.assertEqual(thread["session_id"], attachment.session_id)
+
+    def test_attach_by_session_id_can_resolve_from_threads_rollout_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            config = self._make_config(temp_dir)
+            state = StateStore(temp_dir / "bot_state.json")
+            manager = SessionManager(config, state)
+
+            source_home = temp_dir / "source-home"
+            source_rollout = source_home / "sessions" / "2026" / "04" / "09" / "rollout-random-name.jsonl"
+            source_rollout.parent.mkdir(parents=True, exist_ok=True)
+            source_rollout.write_text(
+                json.dumps(
+                    {
+                        "timestamp": "2026-04-09T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "session-db-path"},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self._seed_minimal_threads_row(
+                source_home / "state_5.sqlite",
+                session_id="session-db-path",
+                rollout_path=manager._normalize_rollout_path(source_rollout),
+            )
+            manager.source_homes = [config.codex.state_dir, source_home]
+
+            attachment = manager.attach_to_alias(chat_id=1, alias="main", session_ref="session-db-path")
+
+            self.assertEqual(attachment.source_session_id, "session-db-path")
+            self.assertTrue(attachment.imported)
+            self.assertTrue(attachment.rekeyed)
+            self.assertTrue(attachment.target_file.exists())
 
     def test_attach_prefers_external_source_over_conflicting_local_copy(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_name:
