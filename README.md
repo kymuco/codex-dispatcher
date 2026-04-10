@@ -95,6 +95,21 @@ python scripts/check_env.py
 
 The checker validates token/binary/workspace/state-dir/account file basics and prints actionable issues.
 
+### Quick troubleshooting (first run)
+
+- `Problem: Config file not found ...`
+  - Fix: copy `config.example.json` to `config.json` or pass an explicit config path.
+- `Problem: Telegram token looks invalid or placeholder.`
+  - Fix: set a real `telegram_token` in `config.json`.
+- `Problem: Codex binary was not found ...`
+  - Fix: install Codex CLI or set `codex.binary` to a valid executable path.
+- `Problem: account 'acc1' auth_file is missing ...`
+  - Fix: point `accounts[].auth_file` to a real auth file and rerun `--check`.
+- Telegram says `This bot is not enabled for this chat.`
+  - Fix: start with `allowed_chat_ids: []`, then run `/chatid` and lock it down.
+
+If setup still fails, run `codex-dispatcher --check` again and then `/health` after startup.
+
 ### 2. Start the bot
 
 ```powershell
@@ -240,22 +255,14 @@ Typing `/` in Telegram also shows command hints published by the bot.
 
 ## Troubleshooting
 
-1. `Config file not found ...`
-   - Ensure `config.json` exists or pass explicit path to `codex-dispatcher`.
-2. `auth.json not found for account ...`
-   - Verify `accounts[].auth_file` paths in config.
-3. `Codex binary was not found ...`
-   - Install Codex CLI or set `codex.binary`.
-4. `Codex did not finish successfully.`
+1. `Codex did not finish successfully.`
    - Check return code and bot logs for command output.
-5. Auto-switch on limits did not trigger.
+2. Auto-switch on limits did not trigger.
    - Update `codex.limit_markers` to match your real limit text.
-6. `/attachsession` cannot find session.
+3. `/attachsession` cannot find session.
    - Use a valid session id from `session_index.jsonl` or a valid rollout file path.
-7. VSCode view copy looks stale.
+4. VSCode view copy looks stale.
    - Reopen or refresh VSCode view, or create a fresh clone.
-8. Bot says it is not enabled for this chat.
-   - Set `allowed_chat_ids` to `[]` for first run, or add your real Telegram chat id.
 
 ## Session purge utility
 
