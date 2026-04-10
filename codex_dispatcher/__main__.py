@@ -144,6 +144,42 @@ def _format_session_id_text(dispatcher: Dispatcher, chat_id: int) -> str:
     return "\n".join(lines)
 
 
+def _format_attachment_text(chat_id: int, attachment: object) -> str:
+    imported = bool(getattr(attachment, "imported", False))
+    rekeyed = bool(getattr(attachment, "rekeyed", False))
+    mode = "imported" if imported else "linked"
+    return (
+        "Session attached.\n"
+        f"Chat id: {chat_id}\n"
+        f"Source session id: {getattr(attachment, 'source_session_id', '-')}\n"
+        f"Local session id: {getattr(attachment, 'session_id', '-')}\n"
+        f"Mode: {mode}\n"
+        f"Rekeyed: {'yes' if rekeyed else 'no'}\n"
+        f"Stored at: {getattr(attachment, 'target_file', '-')}"
+    )
+
+
+def _format_vscode_export_text(action: str, chat_id: int, export: object) -> str:
+    return (
+        f"{action}\n"
+        f"Chat id: {chat_id}\n"
+        f"Session id: {getattr(export, 'session_id', '-')}\n"
+        f"Result: {getattr(export, 'action', '-')}\n"
+        f"Stored at: {getattr(export, 'target_file', '-')}"
+    )
+
+
+def _format_vscode_clone_text(chat_id: int, clone: object) -> str:
+    return (
+        "VSCode view copy created.\n"
+        f"Chat id: {chat_id}\n"
+        f"Source session id: {getattr(clone, 'source_session_id', '-')}\n"
+        f"Cloned session id: {getattr(clone, 'cloned_session_id', '-')}\n"
+        f"Thread name: {getattr(clone, 'thread_name', '-')}\n"
+        f"Rollout path: {getattr(clone, 'target_file', '-')}"
+    )
+
+
 def _run_sdk_cli_action(args: argparse.Namespace) -> int | None:
     if not any(
         (
@@ -160,6 +196,11 @@ def _run_sdk_cli_action(args: argparse.Namespace) -> int | None:
             args.set_model is not None,
             args.set_reasoning is not None,
             args.set_sandbox is not None,
+            args.attach_session is not None,
+            args.export_vscode is not None,
+            args.sync_vscode is not None,
+            args.clone_vscode is not None,
+            args.delete_vscode_copy is not None,
         )
     ):
         return None
@@ -258,6 +299,37 @@ def _run_sdk_cli_action(args: argparse.Namespace) -> int | None:
             f"Sandbox: {sandbox or 'default'}"
         )
         return 0
+    if args.attach_session is not None:
+        chat_id = _parse_chat_id(args.attach_session[0], option="--attach-session")
+        session_ref = args.attach_session[1].strip()
+        if not session_ref:
+            raise ValueError("--attach-session requires a non-empty session reference.")
+        attachment = dispatcher.attach_session(chat_id, session_ref)
+        print(_format_attachment_text(chat_id, attachment))
+        return 0
+    if args.export_vscode is not None:
+        export = dispatcher.export_vscode(args.export_vscode)
+        print(_format_vscode_export_text("Session exported to VSCode.", args.export_vscode, export))
+        return 0
+    if args.sync_vscode is not None:
+        export = dispatcher.sync_vscode(args.sync_vscode)
+        print(_format_vscode_export_text("Session synced to VSCode.", args.sync_vscode, export))
+        return 0
+    if args.clone_vscode is not None:
+        clone = dispatcher.clone_vscode(args.clone_vscode)
+        print(_format_vscode_clone_text(args.clone_vscode, clone))
+        return 0
+    if args.delete_vscode_copy is not None:
+        session_id = args.delete_vscode_copy.strip()
+        if not session_id:
+            raise ValueError("--delete-vscode-copy requires a non-empty session id.")
+        deleted_path = dispatcher.delete_vscode_copy(session_id)
+        print(
+            "VSCode view copy deleted.\n"
+            f"Session id: {session_id}\n"
+            f"Rollout path: {deleted_path}"
+        )
+        return 0
     return None
 
 
@@ -351,6 +423,35 @@ def main() -> None:
         metavar=("CHAT_ID", "MODE"),
         help="Set sandbox mode for active local chat in chat id via SDK (read-only|workspace-write|danger-full-access|default).",
     )
+    action_group.add_argument(
+        "--attach-session",
+        nargs=2,
+        metavar=("CHAT_ID", "SESSION_REF"),
+        help="Attach existing session id or rollout file to active local chat in chat id via SDK.",
+    )
+    action_group.add_argument(
+        "--export-vscode",
+        type=int,
+        metavar="CHAT_ID",
+        help="Export active local chat session to VSCode home for chat id via SDK.",
+    )
+    action_group.add_argument(
+        "--sync-vscode",
+        type=int,
+        metavar="CHAT_ID",
+        help="Sync active local chat session into VSCode home for chat id via SDK.",
+    )
+    action_group.add_argument(
+        "--clone-vscode",
+        type=int,
+        metavar="CHAT_ID",
+        help="Clone active local chat session into temporary VSCode view copy for chat id via SDK.",
+    )
+    action_group.add_argument(
+        "--delete-vscode-copy",
+        metavar="SESSION_ID",
+        help="Delete temporary VSCode view copy by cloned session id via SDK.",
+    )
     parser.add_argument(
         "config",
         nargs="?",
@@ -365,7 +466,7 @@ def main() -> None:
 
     try:
         action_exit_code = _run_sdk_cli_action(args)
-    except ValueError as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise SystemExit(str(exc)) from exc
     if action_exit_code is not None:
         raise SystemExit(action_exit_code)

@@ -4,6 +4,7 @@ import io
 import unittest
 from contextlib import redirect_stdout
 from importlib.metadata import PackageNotFoundError
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -164,6 +165,99 @@ class CliTests(unittest.TestCase):
             str(result.exception),
             "Reasoning must be one of: low, medium, high, xhigh, default.",
         )
+
+    def test_main_attach_session_mode_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        attach_calls: list[tuple[int, str]] = []
+        fake_attachment = SimpleNamespace(
+            source_session_id="source-1",
+            session_id="local-1",
+            target_file=Path("C:/tmp/rollout-local-1.jsonl"),
+            imported=True,
+            rekeyed=True,
+        )
+        fake_dispatcher = SimpleNamespace(
+            attach_session=lambda chat_id, session_ref: attach_calls.append((chat_id, session_ref)) or fake_attachment,
+        )
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher) as from_config,
+            patch("sys.argv", ["codex-dispatcher", "--attach-session", "777", "source-1"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        from_config.assert_called_once_with(None)
+        self.assertEqual(result.exception.code, 0)
+        self.assertEqual(attach_calls, [(777, "source-1")])
+        text = output.getvalue()
+        self.assertIn("Session attached.", text)
+        self.assertIn("Mode: imported", text)
+        self.assertIn("Rekeyed: yes", text)
+
+    def test_main_export_vscode_mode_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        export_calls: list[int] = []
+        fake_export = SimpleNamespace(
+            session_id="s-123",
+            action="created",
+            target_file=Path("C:/tmp/export.jsonl"),
+        )
+        fake_dispatcher = SimpleNamespace(
+            export_vscode=lambda chat_id: export_calls.append(chat_id) or fake_export,
+        )
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher),
+            patch("sys.argv", ["codex-dispatcher", "--export-vscode", "900"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        self.assertEqual(result.exception.code, 0)
+        self.assertEqual(export_calls, [900])
+        text = output.getvalue()
+        self.assertIn("Session exported to VSCode.", text)
+        self.assertIn("Result: created", text)
+
+    def test_main_clone_and_delete_vscode_modes_exit_with_zero(self) -> None:
+        clone_output = io.StringIO()
+        delete_output = io.StringIO()
+        clone_calls: list[int] = []
+        delete_calls: list[str] = []
+        fake_clone = SimpleNamespace(
+            source_session_id="source-2",
+            cloned_session_id="clone-2",
+            thread_name="TEMP VIEW - main",
+            target_file=Path("C:/tmp/clone.jsonl"),
+        )
+        fake_dispatcher = SimpleNamespace(
+            clone_vscode=lambda chat_id: clone_calls.append(chat_id) or fake_clone,
+            delete_vscode_copy=lambda session_id: delete_calls.append(session_id) or Path("C:/tmp/clone.jsonl"),
+        )
+
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher),
+            patch("sys.argv", ["codex-dispatcher", "--clone-vscode", "901"]),
+            redirect_stdout(clone_output),
+        ):
+            with self.assertRaises(SystemExit) as clone_result:
+                cli.main()
+
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher),
+            patch("sys.argv", ["codex-dispatcher", "--delete-vscode-copy", "clone-2"]),
+            redirect_stdout(delete_output),
+        ):
+            with self.assertRaises(SystemExit) as delete_result:
+                cli.main()
+
+        self.assertEqual(clone_result.exception.code, 0)
+        self.assertEqual(delete_result.exception.code, 0)
+        self.assertEqual(clone_calls, [901])
+        self.assertEqual(delete_calls, ["clone-2"])
+        self.assertIn("VSCode view copy created.", clone_output.getvalue())
+        self.assertIn("VSCode view copy deleted.", delete_output.getvalue())
 
 
 if __name__ == "__main__":

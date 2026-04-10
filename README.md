@@ -96,6 +96,16 @@ codex-dispatcher --set-reasoning 123456 high
 codex-dispatcher --set-sandbox 123456 workspace-write
 ```
 
+SDK-backed session and VSCode flows (without Telegram polling):
+
+```powershell
+codex-dispatcher --attach-session 123456 019d....
+codex-dispatcher --clone-vscode 123456
+codex-dispatcher --export-vscode 123456
+codex-dispatcher --sync-vscode 123456
+codex-dispatcher --delete-vscode-copy <cloned-session-id>
+```
+
 ## First run
 
 ### 1. Validate environment before start
