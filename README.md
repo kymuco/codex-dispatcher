@@ -253,6 +253,7 @@ status = dispatcher.status(chat_id=123456)
 ```
 
 The SDK currently exposes first-step high-level methods for checks, chat/session state, settings, and prompt execution.
+See `docs/sdk.md` for method map and practical examples.
 
 ## Safety notes
 
@@ -312,6 +313,8 @@ python -m unittest discover -s tests -v
 ## Project docs
 
 - `CHANGELOG.md`
+- `docs/architecture.md`
+- `docs/sdk.md`
 - `docs/release_notes_v0.1.0.md`
 - `docs/release_notes_v0.1.1.md`
 - `docs/release_checklist.md`
