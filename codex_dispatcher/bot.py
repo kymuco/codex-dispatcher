@@ -4,29 +4,15 @@ import queue
 import threading
 import time
 import uuid
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from .accounts import AccountManager
-from .codex_runner import CodexRunResult, CodexService
+from .codex_runner import CodexRunResult
 from .config import AppConfig
-from .diagnostics import startup_report
-from .session_manager import SessionManager
-from .state import StateStore
+from .core import DispatcherService, PromptJob, StartupCheckError
 from .telegram_api import TelegramApiError, TelegramClient
 
-
-class StartupCheckError(RuntimeError):
-    pass
-
-
-@dataclass
-class CodexJob:
-    chat_id: int
-    alias: str
-    prompt: str
-    reply_to_message_id: int | None
+CodexJob = PromptJob
 
 
 class CodexTelegramBot:
@@ -34,14 +20,6 @@ class CodexTelegramBot:
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
-        data_dir = config.config_path.parent / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-
-        self.state = StateStore(data_dir / "bot_state.json")
-        self.accounts = AccountManager(config, self.state)
-        self.sessions = SessionManager(config, self.state)
-        self._startup_repairs = self.sessions.repair_colliding_local_sessions()
-        self.codex: CodexService | None = None
         self.telegram = TelegramClient(config.telegram_token)
 
         self._jobs: queue.Queue[CodexJob] = queue.Queue()
@@ -50,6 +28,17 @@ class CodexTelegramBot:
         self._last_update_id: int | None = None
         self._worker = threading.Thread(target=self._worker_loop, daemon=True, name="codex-worker")
         self._confirmations: dict[str, dict[str, Any]] = {}
+
+        self.dispatcher = DispatcherService(
+            config,
+            queue_size_getter=self._jobs.qsize,
+            worker_busy_getter=self._worker_busy.is_set,
+        )
+        self.state = self.dispatcher.state
+        self.accounts = self.dispatcher.accounts
+        self.sessions = self.dispatcher.sessions
+        self._startup_repairs = self.dispatcher.startup_repairs
+        self.codex = self.dispatcher.codex
 
     def run_forever(self) -> None:
         self._run_startup_checks()
@@ -85,16 +74,11 @@ class CodexTelegramBot:
         return self._last_update_id + 1
 
     def _run_startup_checks(self) -> None:
-        report = self._startup_report()
-        issues = report["issues"]
-        if issues:
-            first_issue = issues[0]
-            raise StartupCheckError(f"Startup check failed: {first_issue}")
-        if self.codex is None:
-            self.codex = CodexService(self.config, self.state, self.accounts)
+        self.dispatcher.run_startup_checks()
+        self.codex = self.dispatcher.codex
 
     def _startup_report(self) -> dict[str, Any]:
-        return startup_report(self.config)
+        return self.dispatcher.startup_report()
 
     def _sync_telegram_command_hints(self) -> None:
         try:
@@ -368,7 +352,7 @@ class CodexTelegramBot:
             elif command == "/switch":
                 if not args:
                     raise ValueError(self._usage_error("/switch"))
-                self.accounts.set_active_account(args)
+                self.dispatcher.switch_account(args)
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -403,8 +387,8 @@ class CodexTelegramBot:
             elif command == "/attachsession":
                 if not args:
                     raise ValueError(self._usage_error("/attachsession"))
-                alias, _ = self.state.get_active_thread(chat_id)
-                attachment = self.sessions.attach_to_alias(
+                alias = self.dispatcher.get_active_alias(chat_id)
+                attachment = self.dispatcher.attach_session(
                     chat_id=chat_id,
                     alias=alias,
                     session_ref=args,
@@ -425,8 +409,8 @@ class CodexTelegramBot:
                     ),
                 )
             elif command == "/exportvscode":
-                alias = args or self.state.get_active_thread(chat_id)[0]
-                export = self.sessions.export_alias_to_vscode(chat_id=chat_id, alias=alias)
+                alias = args or self.dispatcher.get_active_alias(chat_id)
+                export = self.dispatcher.export_vscode(chat_id=chat_id, alias=alias)
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -438,8 +422,8 @@ class CodexTelegramBot:
                     ),
                 )
             elif command == "/syncvscode":
-                alias = args or self.state.get_active_thread(chat_id)[0]
-                export = self.sessions.sync_alias_to_vscode(chat_id=chat_id, alias=alias)
+                alias = args or self.dispatcher.get_active_alias(chat_id)
+                export = self.dispatcher.sync_vscode(chat_id=chat_id, alias=alias)
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -451,8 +435,8 @@ class CodexTelegramBot:
                     ),
                 )
             elif command == "/clonevscode":
-                alias = self.state.get_active_thread(chat_id)[0]
-                clone = self.sessions.clone_alias_to_vscode(chat_id=chat_id, alias=alias, title=args or None)
+                alias = self.dispatcher.get_active_alias(chat_id)
+                clone = self.dispatcher.clone_vscode(chat_id=chat_id, alias=alias, title=args or None)
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -485,7 +469,7 @@ class CodexTelegramBot:
                 )
             elif command == "/newchat":
                 alias = args or datetime.now(tz=UTC).strftime("chat-%Y%m%d-%H%M%S")
-                self.state.create_or_select_thread(chat_id, alias)
+                self.dispatcher.create_or_select_chat(chat_id, alias)
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -494,15 +478,15 @@ class CodexTelegramBot:
             elif command == "/use":
                 if not args:
                     raise ValueError(self._usage_error("/use"))
-                self.state.set_active_alias(chat_id, args)
+                self.dispatcher.use_chat(chat_id, args)
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
                     text=f"Switched to local chat: {args}",
                 )
             elif command == "/resetchat":
-                alias, _ = self.state.get_active_thread(chat_id)
-                self.state.reset_thread(chat_id, alias)
+                alias = self.dispatcher.get_active_alias(chat_id)
+                self.dispatcher.reset_chat(chat_id, alias)
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -512,7 +496,7 @@ class CodexTelegramBot:
                 if not args:
                     raise ValueError(self._usage_error("/edit"))
                 sandbox_mode = self._parse_edit_mode(args)
-                alias, _ = self.state.get_active_thread(chat_id)
+                alias = self.dispatcher.get_active_alias(chat_id)
                 if sandbox_mode == "danger-full-access":
                     self._request_confirmation(
                         chat_id=chat_id,
@@ -525,14 +509,14 @@ class CodexTelegramBot:
                         ),
                     )
                 else:
-                    self.state.set_thread_sandbox_mode(chat_id, alias, sandbox_mode)
+                    self.dispatcher.set_sandbox(chat_id, alias, sandbox_mode)
                     self.telegram.send_message(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
                         text=self._sandbox_confirmation_text(alias, sandbox_mode, shorthand=True),
                     )
             elif command == "/fullaccess":
-                alias, _ = self.state.get_active_thread(chat_id)
+                alias = self.dispatcher.get_active_alias(chat_id)
                 self._request_confirmation(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -547,7 +531,7 @@ class CodexTelegramBot:
                 if not args:
                     raise ValueError(self._usage_error("/sandbox"))
                 sandbox_mode = self._parse_sandbox_mode(args)
-                alias, _ = self.state.get_active_thread(chat_id)
+                alias = self.dispatcher.get_active_alias(chat_id)
                 if sandbox_mode == "danger-full-access":
                     self._request_confirmation(
                         chat_id=chat_id,
@@ -560,7 +544,7 @@ class CodexTelegramBot:
                         ),
                     )
                 else:
-                    self.state.set_thread_sandbox_mode(chat_id, alias, sandbox_mode)
+                    self.dispatcher.set_sandbox(chat_id, alias, sandbox_mode)
                     self.telegram.send_message(
                         chat_id=chat_id,
                         reply_to_message_id=reply_to_message_id,
@@ -570,8 +554,8 @@ class CodexTelegramBot:
                 if not args:
                     raise ValueError(self._usage_error("/model"))
                 model = self._parse_optional_value(args)
-                alias, _ = self.state.get_active_thread(chat_id)
-                self.state.set_thread_model(chat_id, alias, model)
+                alias = self.dispatcher.get_active_alias(chat_id)
+                self.dispatcher.set_model(chat_id, alias, model)
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -581,8 +565,8 @@ class CodexTelegramBot:
                 if not args:
                     raise ValueError(self._usage_error("/reasoning"))
                 reasoning_effort = self._parse_reasoning_effort(args)
-                alias, _ = self.state.get_active_thread(chat_id)
-                self.state.set_thread_reasoning_effort(chat_id, alias, reasoning_effort)
+                alias = self.dispatcher.get_active_alias(chat_id)
+                self.dispatcher.set_reasoning(chat_id, alias, reasoning_effort)
                 self.telegram.send_message(
                     chat_id=chat_id,
                     reply_to_message_id=reply_to_message_id,
@@ -622,10 +606,8 @@ class CodexTelegramBot:
             )
 
     def _enqueue_prompt(self, *, chat_id: int, reply_to_message_id: int | None, prompt: str) -> None:
-        alias, _ = self.state.get_active_thread(chat_id)
-        job = CodexJob(
+        job = self.dispatcher.build_prompt_job(
             chat_id=chat_id,
-            alias=alias,
             prompt=prompt,
             reply_to_message_id=reply_to_message_id,
         )
@@ -635,7 +617,7 @@ class CodexTelegramBot:
         self.telegram.send_message(
             chat_id=chat_id,
             reply_to_message_id=reply_to_message_id,
-            text=f"Prompt queued for local chat '{alias}'. {suffix}",
+            text=f"Prompt queued for local chat '{job.alias}'. {suffix}",
         )
 
     def _worker_loop(self) -> None:
@@ -647,9 +629,11 @@ class CodexTelegramBot:
 
             self._worker_busy.set()
             try:
-                if self.codex is None:
-                    raise RuntimeError("Bot is not ready. Startup checks were not completed.")
-                result = self.codex.run_prompt(chat_id=job.chat_id, alias=job.alias, prompt=job.prompt)
+                result = self.dispatcher.run_prompt(
+                    chat_id=job.chat_id,
+                    alias=job.alias,
+                    prompt=job.prompt,
+                )
                 self._send_result(job, result)
             except Exception as exc:  # noqa: BLE001
                 self.telegram.send_message(
@@ -683,60 +667,51 @@ class CodexTelegramBot:
         )
 
     def _accounts_text(self) -> str:
-        active = self.accounts.get_active_account_name()
+        entries = self.dispatcher.get_accounts()
         lines = ["Codex accounts:"]
-        for name in self.accounts.list_account_names():
-            marker = "active" if name == active else "idle"
-            lines.append(f"- {name} [{marker}]")
+        for entry in entries:
+            marker = "active" if entry.is_active else "idle"
+            lines.append(f"- {entry.name} [{marker}]")
         return "\n".join(lines)
 
     def _status_text(self, chat_id: int) -> str:
-        active_alias, thread = self.state.get_active_thread(chat_id)
-        active_account = self.accounts.get_active_account_name()
-        queue_size = self._jobs.qsize()
-        busy = "yes" if self._worker_busy.is_set() else "no"
-        session = self._session_summary_text(thread)
-        last_account = self._last_account_text(thread)
-        default_account = active_account or "-"
+        snapshot = self.dispatcher.get_status(chat_id)
+        busy = "yes" if snapshot.worker_busy else "no"
         return (
             "Status\n\n"
-            f"Active local chat: {active_alias}\n"
-            f"Session: {session}\n"
-            f"Last account: {last_account}\n\n"
+            f"Active local chat: {snapshot.active_alias}\n"
+            f"Session: {snapshot.session}\n"
+            f"Last account: {snapshot.last_account}\n\n"
             "Settings\n"
-            f"Model: {self._display_setting(thread.get('model'))}\n"
-            f"Reasoning: {self._display_setting(thread.get('reasoning_effort'))}\n"
-            f"Sandbox: {self._display_setting(thread.get('sandbox_mode'))}\n\n"
+            f"Model: {snapshot.model}\n"
+            f"Reasoning: {snapshot.reasoning}\n"
+            f"Sandbox: {snapshot.sandbox}\n\n"
             "Runtime\n"
-            f"Default account: {default_account}\n"
-            f"Queue: {queue_size}\n"
+            f"Default account: {snapshot.default_account}\n"
+            f"Queue: {snapshot.queue_size}\n"
             f"Worker busy: {busy}\n\n"
             "Next actions\n"
-            f"/use {active_alias}\n"
+            f"/use {snapshot.active_alias}\n"
             "/sessionid\n"
             "/threads"
         )
 
     def _health_text(self, chat_id: int) -> str:
-        report = self._startup_report()
-        active_alias, thread = self.state.get_active_thread(chat_id)
-        active_account = self.accounts.get_active_account_name()
-        queue_size = self._jobs.qsize()
-        busy = "yes" if self._worker_busy.is_set() else "no"
-        bot_status = "ready" if report["ready"] else "not ready"
+        snapshot = self.dispatcher.get_health(chat_id)
+        busy = "yes" if snapshot.worker_busy else "no"
         return (
             "Health\n\n"
-            f"Bot: {bot_status}\n"
-            f"Codex binary: {report['codex_binary']}\n"
-            f"Workspace: {report['workspace']}\n"
-            f"Accounts: {report['accounts']}\n\n"
+            f"Bot: {snapshot.bot_status}\n"
+            f"Codex binary: {snapshot.codex_binary}\n"
+            f"Workspace: {snapshot.workspace}\n"
+            f"Accounts: {snapshot.accounts}\n\n"
             "Runtime\n"
-            f"Default account: {active_account}\n"
-            f"Queue: {queue_size}\n"
+            f"Default account: {snapshot.default_account}\n"
+            f"Queue: {snapshot.queue_size}\n"
             f"Worker busy: {busy}\n\n"
             "Chat\n"
-            f"Active local chat: {active_alias}\n"
-            f"Session: {self._session_summary_text(thread)}"
+            f"Active local chat: {snapshot.active_alias}\n"
+            f"Session: {snapshot.session}"
         )
 
     @staticmethod
@@ -752,20 +727,17 @@ class CodexTelegramBot:
         }
 
     def _threads_actions_markup(self, chat_id: int) -> dict[str, Any]:
-        active_alias, _, threads = self.state.list_threads(chat_id)
+        snapshot = self.dispatcher.list_threads(chat_id)
         rows: list[list[dict[str, Any]]] = [
             [
                 {"text": "Session ID", "callback_data": "act:threads:sessionid"},
                 {"text": "Status", "callback_data": "act:threads:status"},
             ]
         ]
-        ordered_aliases = sorted(
-            threads.keys(),
-            key=lambda alias: (alias != active_alias, alias.lower()),
-        )
+        ordered_aliases = [item.alias for item in snapshot.items]
         use_count = 0
         for alias in ordered_aliases:
-            if alias == active_alias:
+            if alias == snapshot.active_alias:
                 continue
             if use_count >= self._THREADS_USE_ACTIONS_LIMIT:
                 break
@@ -801,50 +773,42 @@ class CodexTelegramBot:
         return callback_data
 
     def _threads_text(self, chat_id: int) -> str:
-        active_alias, _, threads = self.state.list_threads(chat_id)
-        lines = [f"Local chats ({len(threads)})", ""]
-        ordered_threads = sorted(
-            threads.items(),
-            key=lambda item: (item[0] != active_alias, item[0].lower()),
-        )
-        for alias, thread in ordered_threads:
-            marker = "active" if alias == active_alias else "idle"
-            session = self._session_summary_text(thread)
-            last_account = self._last_account_text(thread)
-            lines.append(f"[{marker}] {alias}")
-            lines.append(f"Session: {session}")
-            lines.append(f"Last account: {last_account}")
-            lines.append(f"/use {alias}")
+        snapshot = self.dispatcher.list_threads(chat_id)
+        lines = [f"Local chats ({len(snapshot.items)})", ""]
+        for item in snapshot.items:
+            marker = "active" if item.is_active else "idle"
+            lines.append(f"[{marker}] {item.alias}")
+            lines.append(f"Session: {item.session}")
+            lines.append(f"Last account: {item.last_account}")
+            lines.append(f"/use {item.alias}")
             lines.append("")
         return "\n".join(lines)
 
     def _settings_text(self, chat_id: int) -> str:
-        active_alias, thread = self.state.get_active_thread(chat_id)
+        snapshot = self.dispatcher.get_settings(chat_id)
         return (
             "Settings\n\n"
-            f"Active local chat: {active_alias}\n"
-            f"Model: {self._display_setting(thread.get('model'))}\n"
-            f"Reasoning: {self._display_setting(thread.get('reasoning_effort'))}\n"
-            f"Sandbox: {self._display_setting(thread.get('sandbox_mode'))}\n\n"
+            f"Active local chat: {snapshot.active_alias}\n"
+            f"Model: {snapshot.model}\n"
+            f"Reasoning: {snapshot.reasoning}\n"
+            f"Sandbox: {snapshot.sandbox}\n\n"
             "Applies to the next Codex run in this local chat."
         )
 
     def _session_id_text(self, chat_id: int) -> str:
-        active_alias, thread = self.state.get_active_thread(chat_id)
-        session_id = thread.get("session_id")
-        if not isinstance(session_id, str) or not session_id.strip():
+        snapshot = self.dispatcher.get_session_id(chat_id)
+        if snapshot.session_id is None:
             return (
                 "Session ID\n\n"
-                f"Active local chat: {active_alias}\n"
+                f"Active local chat: {snapshot.active_alias}\n"
                 "Session: not started\n"
                 "Run /ask <text> to create a session."
             )
-        session_id = session_id.strip()
         return (
             "Session ID\n\n"
-            f"Active local chat: {active_alias}\n"
-            f"Session id: {session_id}\n\n"
-            f"/attachsession {session_id}"
+            f"Active local chat: {snapshot.active_alias}\n"
+            f"Session id: {snapshot.session_id}\n\n"
+            f"/attachsession {snapshot.session_id}"
         )
 
     @staticmethod
@@ -1038,7 +1002,7 @@ class CodexTelegramBot:
             alias = payload.get("alias")
             if not isinstance(alias, str) or not alias.strip():
                 raise ValueError("Missing alias for full access confirmation.")
-            self.state.set_thread_sandbox_mode(chat_id, alias, "danger-full-access")
+            self.dispatcher.set_sandbox(chat_id, alias, "danger-full-access")
             self.telegram.send_message(
                 chat_id=chat_id,
                 reply_to_message_id=reply_to_message_id,
@@ -1050,7 +1014,7 @@ class CodexTelegramBot:
             session_id = payload.get("session_id")
             if not isinstance(session_id, str) or not session_id.strip():
                 raise ValueError("Missing cloned session id for delete action.")
-            deleted_file = self.sessions.delete_vscode_view_copy(session_id)
+            deleted_file = self.dispatcher.delete_vscode_copy(session_id)
             self.telegram.send_message(
                 chat_id=chat_id,
                 reply_to_message_id=reply_to_message_id,
