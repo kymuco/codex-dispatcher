@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 
 from . import __version__
-from .bot import CodexTelegramBot, StartupCheckError
+from .bot import CodexTelegramBot
 from .check_env import run_environment_check_from_path
 from .config import load_config
+from .core import StartupCheckError
 
 
 def main() -> None:

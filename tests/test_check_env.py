@@ -5,8 +5,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from codex_dispatcher.check_env import format_environment_report, run_environment_check_from_path
+from codex_dispatcher.check_env import (
+    format_environment_report,
+    run_environment_check,
+    run_environment_check_from_path,
+)
 from codex_dispatcher.config import AccountConfig, AppConfig, CodexConfig
 from codex_dispatcher.diagnostics import startup_report
 
@@ -106,6 +111,31 @@ class EnvironmentCheckTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("Telegram token: missing", text)
             self.assertIn("Result: not ready", text)
+
+    def test_run_environment_check_uses_dispatcher_service_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            config = self._make_config(Path(temp_dir_name))
+            fake_report = {
+                "ready": True,
+                "issues": [],
+                "token": "ok",
+                "codex_binary": "ok",
+                "workspace": "ok",
+                "state_dir": "ok",
+                "accounts": "ok",
+            }
+
+            with patch("codex_dispatcher.check_env.DispatcherService") as dispatcher_cls:
+                dispatcher = dispatcher_cls.return_value
+                dispatcher.startup_report.return_value = fake_report
+
+                code, text = run_environment_check(config)
+
+            dispatcher_cls.assert_called_once_with(config)
+            dispatcher.startup_report.assert_called_once_with()
+            self.assertEqual(code, 0)
+            self.assertIn("Environment check", text)
+            self.assertIn("Result: ready", text)
 
     def test_startup_report_auth_file_issue_includes_path_and_fix(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_name:
