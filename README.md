@@ -13,7 +13,7 @@ Telegram bot for running local Codex sessions from Telegram chats.
 - Supports per-chat runtime settings: model, reasoning, sandbox mode.
 - Supports session file workflows: attach, clone/export/sync for VSCode views.
 
-## Quick start
+## Installation
 
 ### 1. Prerequisites
 
@@ -49,7 +49,7 @@ Optional but useful:
 - `codex.limit_markers` for auto account switch behavior
 - `accounts[].extra_files` if your auth setup requires extra files
 
-### 4. Start the bot
+### 4. Launch command
 
 ```powershell
 codex-dispatcher
@@ -61,7 +61,31 @@ Or with explicit config path:
 codex-dispatcher C:\path\to\codex-dispatcher\config.json
 ```
 
-### 5. First interaction in Telegram
+## First run
+
+### 1. Validate environment before start
+
+Use one of these checks:
+
+```powershell
+codex-dispatcher --check
+```
+
+or
+
+```powershell
+python scripts/check_env.py
+```
+
+The checker validates token/binary/workspace/state-dir/account file basics and prints actionable issues.
+
+### 2. Start the bot
+
+```powershell
+codex-dispatcher
+```
+
+### 3. First interaction in Telegram
 
 1. Send `/start`
 2. Send a plain text prompt, for example: `summarize this repository`

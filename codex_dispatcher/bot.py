@@ -11,6 +11,7 @@ from typing import Any
 from .accounts import AccountManager
 from .codex_runner import CodexRunResult, CodexService
 from .config import AppConfig
+from .diagnostics import startup_report
 from .session_manager import SessionManager
 from .state import StateStore
 from .telegram_api import TelegramApiError, TelegramClient
@@ -93,67 +94,7 @@ class CodexTelegramBot:
             self.codex = CodexService(self.config, self.state, self.accounts)
 
     def _startup_report(self) -> dict[str, Any]:
-        issues: list[str] = []
-        codex_binary_status = "ok"
-        workspace_status = "ok"
-        accounts_status = "ok"
-
-        try:
-            CodexService._resolve_binary_path(self.config.codex.binary)
-        except FileNotFoundError:
-            codex_binary_status = "missing"
-            issues.append(
-                "Codex binary was not found.\n"
-                "Set codex.binary in config.json to a valid executable path."
-            )
-
-        cwd = self.config.codex.cwd
-        if not cwd.exists() or not cwd.is_dir():
-            workspace_status = "error"
-            issues.append(
-                f"Workspace directory is missing: {cwd}\n"
-                "Set codex.cwd in config.json to an existing directory."
-            )
-        try:
-            self.config.codex.state_dir.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            workspace_status = "error"
-            issues.append(
-                f"State directory is not writable: {self.config.codex.state_dir}\n"
-                "Set codex.state_dir in config.json to a writable path."
-            )
-
-        if not self.config.accounts:
-            accounts_status = "missing"
-            issues.append(
-                "No Codex accounts are configured.\n"
-                "Add at least one account in config.json."
-            )
-        else:
-            for account in self.config.accounts:
-                if not account.auth_file.exists():
-                    accounts_status = "missing"
-                    issues.append(
-                        f"account '{account.name}' auth file is missing.\n"
-                        "Check the auth_file path in config.json."
-                    )
-                    break
-                missing_extra = next((path for path in account.extra_files if not path.exists()), None)
-                if missing_extra is not None:
-                    accounts_status = "missing"
-                    issues.append(
-                        f"account '{account.name}' extra file is missing: {missing_extra}\n"
-                        "Check account extra_files paths in config.json."
-                    )
-                    break
-
-        return {
-            "ready": not issues,
-            "issues": issues,
-            "codex_binary": codex_binary_status,
-            "workspace": workspace_status,
-            "accounts": accounts_status,
-        }
+        return startup_report(self.config)
 
     def _sync_telegram_command_hints(self) -> None:
         try:

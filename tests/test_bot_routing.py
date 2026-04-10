@@ -51,7 +51,7 @@ class BotRoutingTests(unittest.TestCase):
         auth_file = temp_dir / "auth.json"
         auth_file.write_text("{}", encoding="utf-8")
         config = AppConfig(
-            telegram_token="token",
+            telegram_token="123456:abc",
             allowed_chat_ids=(),
             polling_timeout_seconds=10,
             polling_retry_delay_seconds=1,

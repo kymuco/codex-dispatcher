@@ -1,5 +1,5 @@
 {
-  "telegram_token": "1234567890:replace-with-your-bot-token",
+  "telegram_token": "<telegram-bot-token>",
   "allowed_chat_ids": [
     123456789
   ],

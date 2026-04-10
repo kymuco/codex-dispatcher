@@ -25,6 +25,19 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.exception.code, 0)
         self.assertIn(__version__, output.getvalue())
 
+    def test_main_check_mode_exits_with_report_code(self) -> None:
+        output = io.StringIO()
+        with (
+            patch("codex_dispatcher.__main__.run_environment_check_from_path", return_value=(0, "Environment check")),
+            patch("sys.argv", ["codex-dispatcher", "--check"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        self.assertEqual(result.exception.code, 0)
+        self.assertIn("Environment check", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
