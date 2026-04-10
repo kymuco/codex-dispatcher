@@ -4,6 +4,7 @@ from typing import Any
 
 from .config import AppConfig
 from .codex_runner import CodexService
+from .path_utils import display_path
 
 
 def _issue(problem: str, fix: str) -> str:
@@ -49,7 +50,7 @@ def startup_report(config: AppConfig) -> dict[str, Any]:
         workspace_status = "missing"
         issues.append(
             _issue(
-                f"Workspace directory is missing: {cwd}",
+                f"Workspace directory is missing: {display_path(cwd)}",
                 "Set codex.cwd in config.json to an existing directory.",
             )
         )
@@ -60,7 +61,7 @@ def startup_report(config: AppConfig) -> dict[str, Any]:
         state_dir_status = "error"
         issues.append(
             _issue(
-                f"State directory is not writable: {config.codex.state_dir}",
+                f"State directory is not writable: {display_path(config.codex.state_dir)}",
                 "Set codex.state_dir in config.json to a writable path.",
             )
         )
@@ -79,7 +80,7 @@ def startup_report(config: AppConfig) -> dict[str, Any]:
                 accounts_status = "missing"
                 issues.append(
                     _issue(
-                        f"account '{account.name}' auth_file is missing: {account.auth_file}",
+                        f"account '{account.name}' auth_file is missing: {display_path(account.auth_file)}",
                         "Check accounts[].auth_file paths in config.json.",
                     )
                 )
@@ -89,7 +90,7 @@ def startup_report(config: AppConfig) -> dict[str, Any]:
                 accounts_status = "missing"
                 issues.append(
                     _issue(
-                        f"account '{account.name}' extra file is missing: {missing_extra}",
+                        f"account '{account.name}' extra file is missing: {display_path(missing_extra)}",
                         "Check accounts[].extra_files paths in config.json.",
                     )
                 )

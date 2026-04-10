@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+from .path_utils import strip_windows_extended_prefix
+
 
 @dataclass(frozen=True)
 class SessionPurgeReport:
@@ -350,7 +352,7 @@ class CodexSessionPurger:
             current = current.parent
 
     def _strip_extended_prefix(self, raw_path: str) -> str:
-        return raw_path[4:] if raw_path.startswith("\\\\?\\") else raw_path
+        return strip_windows_extended_prefix(raw_path)
 
     def _normalize_session_id(self, session_id: str) -> str:
         normalized = session_id.strip().strip('"').strip("'")

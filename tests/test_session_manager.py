@@ -12,7 +12,7 @@ from codex_dispatcher.state import StateStore
 
 
 class SessionManagerTests(unittest.TestCase):
-    def _make_config(self, temp_dir: Path) -> AppConfig:
+    def _make_config(self, temp_dir: Path, *, cwd: Path | None = None) -> AppConfig:
         auth_file = temp_dir / "auth.json"
         auth_file.write_text("{}", encoding="utf-8")
         return AppConfig(
@@ -22,7 +22,7 @@ class SessionManagerTests(unittest.TestCase):
             polling_retry_delay_seconds=1,
             codex=CodexConfig(
                 binary="codex",
-                cwd=temp_dir,
+                cwd=cwd or temp_dir,
                 state_dir=temp_dir / "bot-home",
                 model=None,
                 extra_args=("--skip-git-repo-check",),
@@ -79,6 +79,38 @@ class SessionManagerTests(unittest.TestCase):
             self.assertNotIn("session-123", attachment.target_file.name)
             first_line = attachment.target_file.read_text(encoding="utf-8").splitlines()[0]
             self.assertIn(f'"id":"{attachment.session_id}"', first_line)
+            _, thread = state.get_active_thread(1)
+            self.assertEqual(thread["session_id"], attachment.session_id)
+
+    def test_attach_session_ref_resolves_relative_to_codex_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            workspace_dir = temp_dir / "workspace"
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+            config = self._make_config(temp_dir, cwd=workspace_dir)
+            state = StateStore(temp_dir / "bot_state.json")
+            manager = SessionManager(config, state)
+
+            relative_ref = Path("imports") / "rollout-relative.jsonl"
+            source_file = workspace_dir / relative_ref
+            source_file.parent.mkdir(parents=True, exist_ok=True)
+            source_file.write_text(
+                json.dumps(
+                    {
+                        "timestamp": "2026-04-09T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "session-rel"},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            attachment = manager.attach_to_alias(chat_id=1, alias="main", session_ref=str(relative_ref))
+
+            self.assertEqual(attachment.source_session_id, "session-rel")
+            self.assertTrue(attachment.imported)
+            self.assertTrue(attachment.target_file.exists())
             _, thread = state.get_active_thread(1)
             self.assertEqual(thread["session_id"], attachment.session_id)
 

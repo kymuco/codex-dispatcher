@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .config import load_config
 from .diagnostics import startup_report
+from .path_utils import display_path
 
 
 def _check_failure_text(*, problem: str, fix: str) -> str:
@@ -33,7 +34,7 @@ def format_environment_report(report: dict[str, object], *, config_path: Path) -
     lines = [
         "Environment check",
         "",
-        f"Config: {config_path}",
+        f"Config: {display_path(config_path)}",
         f"Telegram token: {report['token']}",
         f"Codex binary: {report['codex_binary']}",
         f"Workspace: {report['workspace']}",

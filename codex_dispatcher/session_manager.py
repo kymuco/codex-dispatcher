@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import AppConfig
+from .path_utils import display_path, normalize_rollout_path, strip_windows_extended_prefix
 from .state import StateStore
 
 
@@ -322,11 +323,11 @@ class SessionManager:
         if not raw:
             raise ValueError("Session reference must not be empty.")
 
-        path_candidate = Path(raw).expanduser()
-        if path_candidate.exists():
-            if not path_candidate.is_file():
-                raise ValueError(f"Session path is not a file: {path_candidate}")
-            return path_candidate, self._extract_session_id_from_file(path_candidate)
+        for path_candidate in self._session_ref_path_candidates(raw):
+            if path_candidate.exists():
+                if not path_candidate.is_file():
+                    raise ValueError(f"Session path is not a file: {display_path(path_candidate)}")
+                return path_candidate, self._extract_session_id_from_file(path_candidate)
 
         homes_to_search = self._ordered_source_homes(prefer_external=prefer_external)
         for home in homes_to_search:
@@ -338,6 +339,24 @@ class SessionManager:
             f"Session not found for reference: {session_ref}. "
             "Pass either a full path to a session .jsonl file or a known session id."
         )
+
+    def _session_ref_path_candidates(self, raw_ref: str) -> list[Path]:
+        normalized = strip_windows_extended_prefix(raw_ref)
+        path_candidate = Path(normalized).expanduser()
+        candidates: list[Path] = [path_candidate]
+        if not path_candidate.is_absolute():
+            candidates.append((self.config.codex.cwd / path_candidate).expanduser())
+            candidates.append((self.config.config_path.parent / path_candidate).expanduser())
+
+        unique_candidates: list[Path] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            key = str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_candidates.append(candidate)
+        return unique_candidates
 
     def _find_session_file_in_home(self, home: Path, session_id: str) -> Path | None:
         sessions_dir = home / "sessions"
@@ -793,15 +812,10 @@ class SessionManager:
             connection.close()
 
     def _normalize_rollout_path(self, path: Path) -> str:
-        raw = str(path.resolve())
-        if raw.startswith("\\\\?\\"):
-            return raw
-        if len(raw) >= 2 and raw[1] == ":":
-            return f"\\\\?\\{raw}"
-        return raw
+        return normalize_rollout_path(path)
 
     def _strip_extended_prefix(self, raw_path: str) -> str:
-        return raw_path[4:] if raw_path.startswith("\\\\?\\") else raw_path
+        return strip_windows_extended_prefix(raw_path)
 
     def _build_view_title(self, *, alias: str, title: str | None) -> str:
         base = (title or alias or "telegram view").strip()
