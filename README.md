@@ -42,10 +42,12 @@ Copy the example and fill required fields:
 Copy-Item config.example.json config.json
 ```
 
+For a quick first run, keep `allowed_chat_ids` as an empty list (`[]`).  
+After the bot works, use `/chatid` and set an explicit allow-list.
+
 Set at least:
 
 - `telegram_token`
-- `allowed_chat_ids`
 - `codex.cwd`
 - `codex.state_dir`
 - `accounts[].auth_file`
@@ -54,6 +56,14 @@ Optional but useful:
 
 - `codex.limit_markers` for auto account switch behavior
 - `accounts[].extra_files` if your auth setup requires extra files
+
+Make sure `accounts[].auth_file` points to a real file before running checks.
+Example (PowerShell):
+
+```powershell
+New-Item -ItemType Directory -Path accounts\acc1 -Force | Out-Null
+Copy-Item C:\path\to\real\auth.json accounts\acc1\auth.json
+```
 
 ### 4. Launch command
 
@@ -96,6 +106,7 @@ codex-dispatcher
 1. Send `/start`
 2. Send a plain text prompt, for example: `summarize this repository`
 3. Check state with `/status`
+4. Run `/chatid` and lock down `allowed_chat_ids` in `config.json` if needed
 
 ## Typical flows
 
@@ -243,6 +254,8 @@ Typing `/` in Telegram also shows command hints published by the bot.
    - Use a valid session id from `session_index.jsonl` or a valid rollout file path.
 7. VSCode view copy looks stale.
    - Reopen or refresh VSCode view, or create a fresh clone.
+8. Bot says it is not enabled for this chat.
+   - Set `allowed_chat_ids` to `[]` for first run, or add your real Telegram chat id.
 
 ## Session purge utility
 

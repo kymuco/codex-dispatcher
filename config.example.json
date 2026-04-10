@@ -1,8 +1,6 @@
 {
   "telegram_token": "<telegram-bot-token>",
-  "allowed_chat_ids": [
-    123456789
-  ],
+  "allowed_chat_ids": [],
   "polling_timeout_seconds": 25,
   "polling_retry_delay_seconds": 3,
   "codex": {
@@ -30,12 +28,7 @@
   "accounts": [
     {
       "name": "acc1",
-      "auth_file": "C:\\path\\to\\accounts\\acc1\\auth.json",
-      "extra_files": []
-    },
-    {
-      "name": "acc2",
-      "auth_file": "C:\\path\\to\\accounts\\acc2\\auth.json",
+      "auth_file": "accounts/acc1/auth.json",
       "extra_files": []
     }
   ]
