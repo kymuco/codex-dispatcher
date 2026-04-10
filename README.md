@@ -71,6 +71,12 @@ Copy-Item C:\path\to\real\auth.json accounts\acc1\auth.json
 codex-dispatcher
 ```
 
+Short alias after install:
+
+```powershell
+cdx
+```
+
 Or with explicit config path:
 
 ```powershell
@@ -112,14 +118,28 @@ Run a prompt from CLI via SDK (without Telegram polling):
 codex-dispatcher --ask 123456 "summarize this repository"
 ```
 
-Recommended structured SDK CLI mode:
+Recommended structured SDK CLI mode (no `sdk` prefix):
+
+```powershell
+codex-dispatcher status 123456
+codex-dispatcher threads 123456
+codex-dispatcher new-chat 123456 bugfix
+codex-dispatcher set-model 123456 gpt-5.4
+codex-dispatcher ask 123456 "summarize this repository"
+```
+
+Same commands with short alias:
+
+```powershell
+cdx status 123456
+cdx threads 123456
+cdx ask 123456 "summarize this repository"
+```
+
+Backward-compatible legacy form is still supported:
 
 ```powershell
 codex-dispatcher sdk status 123456
-codex-dispatcher sdk threads 123456
-codex-dispatcher sdk new-chat 123456 bugfix
-codex-dispatcher sdk set-model 123456 gpt-5.4
-codex-dispatcher sdk ask 123456 "summarize this repository"
 ```
 
 ## First run

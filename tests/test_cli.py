@@ -13,6 +13,11 @@ from codex_dispatcher import __version__, get_version
 
 
 class CliTests(unittest.TestCase):
+    def test_pyproject_exposes_cdx_script(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        pyproject_text = (project_root / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('cdx = "codex_dispatcher.__main__:main"', pyproject_text)
+
     def test_get_version_uses_fallback_when_metadata_missing(self) -> None:
         with patch("codex_dispatcher.metadata_version", side_effect=PackageNotFoundError):
             self.assertEqual(get_version(), "0.0.0+local")
@@ -361,6 +366,84 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.exception.code, 0)
         self.assertEqual(ask_calls, [(777, "summarize")])
         self.assertIn("Prompt completed.", output.getvalue())
+
+    def test_main_top_level_status_subcommand_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        fake_status = SimpleNamespace(
+            active_alias="main",
+            session="started",
+            last_account="acc1",
+            model="default",
+            reasoning="default",
+            sandbox="workspace-write",
+            default_account="acc1",
+            queue_size=0,
+            worker_busy=False,
+        )
+        fake_dispatcher = SimpleNamespace(status=lambda chat_id: fake_status)
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher) as from_config,
+            patch("sys.argv", ["codex-dispatcher", "status", "123"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        from_config.assert_called_once_with(None)
+        self.assertEqual(result.exception.code, 0)
+        text = output.getvalue()
+        self.assertIn("Status", text)
+        self.assertIn("Chat id: 123", text)
+
+    def test_main_top_level_subcommand_accepts_config_option(self) -> None:
+        output = io.StringIO()
+        fake_health = SimpleNamespace(
+            bot_status="ready",
+            codex_binary="ok",
+            workspace="ok",
+            accounts="ok",
+            default_account="acc1",
+            queue_size=0,
+            worker_busy=False,
+            active_alias="main",
+            session="not started",
+        )
+        fake_dispatcher = SimpleNamespace(health=lambda chat_id: fake_health)
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher) as from_config,
+            patch("sys.argv", ["codex-dispatcher", "--config", "custom.json", "health", "321"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        from_config.assert_called_once_with("custom.json")
+        self.assertEqual(result.exception.code, 0)
+        text = output.getvalue()
+        self.assertIn("Health", text)
+        self.assertIn("Chat id: 321", text)
+
+    def test_main_cdx_top_level_subcommand_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        fake_dispatcher = SimpleNamespace(
+            accounts=lambda: (
+                SimpleNamespace(name="acc1", is_active=True),
+                SimpleNamespace(name="acc2", is_active=False),
+            )
+        )
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher) as from_config,
+            patch("sys.argv", ["cdx", "accounts"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        from_config.assert_called_once_with(None)
+        self.assertEqual(result.exception.code, 0)
+        text = output.getvalue()
+        self.assertIn("Accounts", text)
+        self.assertIn("- acc1 [active]", text)
 
 
 if __name__ == "__main__":

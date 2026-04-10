@@ -10,6 +10,41 @@ from .config import load_config
 from .core import StartupCheckError
 from .sdk import Dispatcher
 
+_STRUCTURED_SUBCOMMANDS = frozenset(
+    {
+        "accounts",
+        "status",
+        "health",
+        "threads",
+        "settings",
+        "session-id",
+        "switch-account",
+        "new-chat",
+        "use-chat",
+        "reset-chat",
+        "set-model",
+        "set-reasoning",
+        "set-sandbox",
+        "attach-session",
+        "export-vscode",
+        "sync-vscode",
+        "clone-vscode",
+        "delete-vscode-copy",
+        "ask",
+    }
+)
+
+
+def _is_structured_subcommand_argv(argv: list[str]) -> bool:
+    if not argv:
+        return False
+    first = argv[0]
+    if first in _STRUCTURED_SUBCOMMANDS:
+        return True
+    if first in {"--config", "-c"} and len(argv) >= 3 and argv[2] in _STRUCTURED_SUBCOMMANDS:
+        return True
+    return False
+
 
 def _parse_chat_id(raw_value: str, *, option: str) -> int:
     value = raw_value.strip()
@@ -199,12 +234,13 @@ def _format_ask_result(chat_id: int, result: object) -> str:
     )
 
 
-def _build_sdk_subcommand_parser() -> argparse.ArgumentParser:
+def _build_sdk_subcommand_parser(*, prog: str = "codex-dispatcher sdk") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="codex-dispatcher sdk",
+        prog=prog,
         description="Run SDK-backed commands without Telegram polling.",
     )
     parser.add_argument(
+        "-c",
         "--config",
         help="Path to config.json. Defaults to BOT_CONFIG or ./config.json.",
     )
@@ -276,8 +312,8 @@ def _build_sdk_subcommand_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_sdk_subcommand(argv: list[str]) -> int:
-    parser = _build_sdk_subcommand_parser()
+def _run_sdk_subcommand(argv: list[str], *, prog: str = "codex-dispatcher sdk") -> int:
+    parser = _build_sdk_subcommand_parser(prog=prog)
     args = parser.parse_args(argv)
     dispatcher = Dispatcher.from_config(args.config)
 
@@ -575,6 +611,15 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "sdk":
         try:
             sdk_exit_code = _run_sdk_subcommand(sys.argv[2:])
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise SystemExit(str(exc)) from exc
+        raise SystemExit(sdk_exit_code)
+    if _is_structured_subcommand_argv(sys.argv[1:]):
+        try:
+            sdk_exit_code = _run_sdk_subcommand(
+                sys.argv[1:],
+                prog="codex-dispatcher",
+            )
         except (KeyError, ValueError, FileNotFoundError) as exc:
             raise SystemExit(str(exc)) from exc
         raise SystemExit(sdk_exit_code)
