@@ -8,6 +8,23 @@ This changelog follows a lightweight Keep a Changelog style and Semantic Version
 
 No unreleased changes.
 
+## [0.1.1] - 2026-04-10
+
+### Changed
+- Improved first-run setup ergonomics in `README.md` and `config.example.json` (safer starter defaults and clearer setup flow).
+- Tightened ambiguous callback and chat-access messages with clearer next-step guidance.
+- Added concise first-run troubleshooting map based on real install failures.
+
+### Reliability
+- Added Windows-first CI smoke pipeline with Ubuntu sanity check for install/diagnostics flow.
+- Improved `--check` diagnostics output with explicit `Problem` / `Fix` messaging.
+- Normalized Windows path handling (`\\?\`, UNC prefix, relative reference resolution) across session and diagnostics flows.
+- Hardened session lookup edge cases by resolving `session_id` via `threads.rollout_path` when filename matching is insufficient.
+
+### Testing
+- Expanded regression coverage for diagnostics formatting and path normalization.
+- Added session-manager tests for relative session refs and DB rollout-path resolution.
+
 ## [0.1.0] - 2026-04-10
 
 ### Added
