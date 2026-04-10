@@ -1,6 +1,12 @@
 # Codex Dispatcher
 
+[![CI Smoke](https://github.com/kymuco/codex-dispatcher/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kymuco/codex-dispatcher/actions/workflows/ci.yml?query=branch%3Amain)
+![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)
+![License Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)
+
 Telegram bot for running local Codex sessions from Telegram chats.
+
+Windows is the primary runtime target. CI also runs a basic Ubuntu sanity check.
 
 ## What this bot does
 
