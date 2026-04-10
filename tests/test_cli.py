@@ -92,6 +92,79 @@ class CliTests(unittest.TestCase):
         self.assertIn("Active local chat: bugfix", text)
         self.assertIn("Worker busy: yes", text)
 
+    def test_main_switch_account_mode_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        switch_calls: list[str] = []
+        fake_dispatcher = SimpleNamespace(
+            switch_account=lambda name: switch_calls.append(name),
+        )
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher) as from_config,
+            patch("sys.argv", ["codex-dispatcher", "--switch-account", "acc2"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        from_config.assert_called_once_with(None)
+        self.assertEqual(result.exception.code, 0)
+        self.assertEqual(switch_calls, ["acc2"])
+        self.assertIn("Default account changed: acc2", output.getvalue())
+
+    def test_main_new_chat_mode_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        new_chat_calls: list[tuple[int, str]] = []
+        fake_dispatcher = SimpleNamespace(
+            new_chat=lambda chat_id, alias: new_chat_calls.append((chat_id, alias)) or alias,
+        )
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher) as from_config,
+            patch("sys.argv", ["codex-dispatcher", "--new-chat", "3456", "bugfix"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        from_config.assert_called_once_with(None)
+        self.assertEqual(result.exception.code, 0)
+        self.assertEqual(new_chat_calls, [(3456, "bugfix")])
+        text = output.getvalue()
+        self.assertIn("Local chat created and activated.", text)
+        self.assertIn("Chat id: 3456", text)
+        self.assertIn("Alias: bugfix", text)
+
+    def test_main_set_model_mode_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        set_model_calls: list[tuple[int, str | None]] = []
+        active_chat_calls: list[int] = []
+        fake_dispatcher = SimpleNamespace(
+            set_model=lambda chat_id, model: set_model_calls.append((chat_id, model)),
+            active_chat=lambda chat_id: active_chat_calls.append(chat_id) or "main",
+        )
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher) as from_config,
+            patch("sys.argv", ["codex-dispatcher", "--set-model", "555", "default"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        from_config.assert_called_once_with(None)
+        self.assertEqual(result.exception.code, 0)
+        self.assertEqual(set_model_calls, [(555, None)])
+        self.assertEqual(active_chat_calls, [555])
+        self.assertIn("Model: default", output.getvalue())
+
+    def test_main_set_reasoning_rejects_invalid_value(self) -> None:
+        with patch("sys.argv", ["codex-dispatcher", "--set-reasoning", "100", "turbo"]):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        self.assertEqual(
+            str(result.exception),
+            "Reasoning must be one of: low, medium, high, xhigh, default.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

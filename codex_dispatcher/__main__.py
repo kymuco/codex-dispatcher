@@ -10,6 +10,53 @@ from .core import StartupCheckError
 from .sdk import Dispatcher
 
 
+def _parse_chat_id(raw_value: str, *, option: str) -> int:
+    value = raw_value.strip()
+    if not value:
+        raise ValueError(f"{option} requires a chat id.")
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{option} chat id must be an integer: {raw_value}") from exc
+
+
+def _parse_optional_setting_value(raw_value: str) -> str | None:
+    value = raw_value.strip()
+    if not value:
+        raise ValueError("Setting value must not be empty.")
+    if value.lower() in {"default", "clear", "none", "off"}:
+        return None
+    return value
+
+
+def _parse_reasoning_value(raw_value: str) -> str | None:
+    value = _parse_optional_setting_value(raw_value)
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized not in {"low", "medium", "high", "xhigh"}:
+        raise ValueError(
+            "Reasoning must be one of: low, medium, high, xhigh, default."
+        )
+    return normalized
+
+
+def _parse_sandbox_value(raw_value: str) -> str | None:
+    value = _parse_optional_setting_value(raw_value)
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized in {"read-only", "read", "readonly"}:
+        return "read-only"
+    if normalized in {"workspace-write", "write"}:
+        return "workspace-write"
+    if normalized in {"danger-full-access", "danger", "full"}:
+        return "danger-full-access"
+    raise ValueError(
+        "Sandbox must be one of: read-only, workspace-write, danger-full-access, default."
+    )
+
+
 def _format_accounts_text(dispatcher: Dispatcher) -> str:
     lines = ["Accounts"]
     for account in dispatcher.accounts():
@@ -106,6 +153,13 @@ def _run_sdk_cli_action(args: argparse.Namespace) -> int | None:
             args.threads_chat_id is not None,
             args.settings_chat_id is not None,
             args.session_id_chat_id is not None,
+            args.switch_account is not None,
+            args.new_chat is not None,
+            args.use_chat is not None,
+            args.reset_chat is not None,
+            args.set_model is not None,
+            args.set_reasoning is not None,
+            args.set_sandbox is not None,
         )
     ):
         return None
@@ -128,6 +182,81 @@ def _run_sdk_cli_action(args: argparse.Namespace) -> int | None:
         return 0
     if args.session_id_chat_id is not None:
         print(_format_session_id_text(dispatcher, args.session_id_chat_id))
+        return 0
+    if args.switch_account is not None:
+        account = args.switch_account.strip()
+        if not account:
+            raise ValueError("--switch-account requires a non-empty account name.")
+        dispatcher.switch_account(account)
+        print(f"Default account changed: {account}")
+        return 0
+    if args.new_chat is not None:
+        chat_id = _parse_chat_id(args.new_chat[0], option="--new-chat")
+        alias = args.new_chat[1].strip()
+        if not alias:
+            raise ValueError("--new-chat requires a non-empty alias.")
+        dispatcher.new_chat(chat_id, alias)
+        print(
+            "Local chat created and activated.\n"
+            f"Chat id: {chat_id}\n"
+            f"Alias: {alias}"
+        )
+        return 0
+    if args.use_chat is not None:
+        chat_id = _parse_chat_id(args.use_chat[0], option="--use-chat")
+        alias = args.use_chat[1].strip()
+        if not alias:
+            raise ValueError("--use-chat requires a non-empty alias.")
+        dispatcher.use_chat(chat_id, alias)
+        print(
+            "Active local chat changed.\n"
+            f"Chat id: {chat_id}\n"
+            f"Alias: {alias}"
+        )
+        return 0
+    if args.reset_chat is not None:
+        alias = dispatcher.reset_chat(args.reset_chat)
+        print(
+            "Session reset.\n"
+            f"Chat id: {args.reset_chat}\n"
+            f"Alias: {alias}"
+        )
+        return 0
+    if args.set_model is not None:
+        chat_id = _parse_chat_id(args.set_model[0], option="--set-model")
+        model = _parse_optional_setting_value(args.set_model[1])
+        dispatcher.set_model(chat_id, model)
+        active_alias = dispatcher.active_chat(chat_id)
+        print(
+            "Model updated.\n"
+            f"Chat id: {chat_id}\n"
+            f"Alias: {active_alias}\n"
+            f"Model: {model or 'default'}"
+        )
+        return 0
+    if args.set_reasoning is not None:
+        chat_id = _parse_chat_id(args.set_reasoning[0], option="--set-reasoning")
+        reasoning = _parse_reasoning_value(args.set_reasoning[1])
+        dispatcher.set_reasoning(chat_id, reasoning)
+        active_alias = dispatcher.active_chat(chat_id)
+        print(
+            "Reasoning updated.\n"
+            f"Chat id: {chat_id}\n"
+            f"Alias: {active_alias}\n"
+            f"Reasoning: {reasoning or 'default'}"
+        )
+        return 0
+    if args.set_sandbox is not None:
+        chat_id = _parse_chat_id(args.set_sandbox[0], option="--set-sandbox")
+        sandbox = _parse_sandbox_value(args.set_sandbox[1])
+        dispatcher.set_sandbox(chat_id, sandbox)
+        active_alias = dispatcher.active_chat(chat_id)
+        print(
+            "Sandbox updated.\n"
+            f"Chat id: {chat_id}\n"
+            f"Alias: {active_alias}\n"
+            f"Sandbox: {sandbox or 'default'}"
+        )
         return 0
     return None
 
@@ -181,6 +310,47 @@ def main() -> None:
         metavar="CHAT_ID",
         help="Print active session id for chat id without starting Telegram polling.",
     )
+    action_group.add_argument(
+        "--switch-account",
+        metavar="ACCOUNT",
+        help="Set default account in local bot state via SDK.",
+    )
+    action_group.add_argument(
+        "--new-chat",
+        nargs=2,
+        metavar=("CHAT_ID", "ALIAS"),
+        help="Create and activate a local chat alias for chat id via SDK.",
+    )
+    action_group.add_argument(
+        "--use-chat",
+        nargs=2,
+        metavar=("CHAT_ID", "ALIAS"),
+        help="Switch active local chat alias for chat id via SDK.",
+    )
+    action_group.add_argument(
+        "--reset-chat",
+        type=int,
+        metavar="CHAT_ID",
+        help="Reset active local chat session id for chat id via SDK.",
+    )
+    action_group.add_argument(
+        "--set-model",
+        nargs=2,
+        metavar=("CHAT_ID", "MODEL"),
+        help="Set model override for active local chat in chat id via SDK (use default to clear).",
+    )
+    action_group.add_argument(
+        "--set-reasoning",
+        nargs=2,
+        metavar=("CHAT_ID", "LEVEL"),
+        help="Set reasoning for active local chat in chat id via SDK (low|medium|high|xhigh|default).",
+    )
+    action_group.add_argument(
+        "--set-sandbox",
+        nargs=2,
+        metavar=("CHAT_ID", "MODE"),
+        help="Set sandbox mode for active local chat in chat id via SDK (read-only|workspace-write|danger-full-access|default).",
+    )
     parser.add_argument(
         "config",
         nargs="?",
@@ -193,7 +363,10 @@ def main() -> None:
         print(text)
         raise SystemExit(code)
 
-    action_exit_code = _run_sdk_cli_action(args)
+    try:
+        action_exit_code = _run_sdk_cli_action(args)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     if action_exit_code is not None:
         raise SystemExit(action_exit_code)
 

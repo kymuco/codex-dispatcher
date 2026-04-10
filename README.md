@@ -86,6 +86,16 @@ codex-dispatcher --health-chat-id 123456
 codex-dispatcher --threads-chat-id 123456
 ```
 
+SDK-backed state updates (without Telegram polling):
+
+```powershell
+codex-dispatcher --new-chat 123456 bugfix
+codex-dispatcher --use-chat 123456 bugfix
+codex-dispatcher --set-model 123456 gpt-5.4
+codex-dispatcher --set-reasoning 123456 high
+codex-dispatcher --set-sandbox 123456 workspace-write
+```
+
 ## First run
 
 ### 1. Validate environment before start
