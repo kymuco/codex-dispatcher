@@ -77,6 +77,15 @@ Or with explicit config path:
 codex-dispatcher C:\path\to\codex-dispatcher\config.json
 ```
 
+Read-only CLI snapshots (without Telegram polling):
+
+```powershell
+codex-dispatcher --accounts
+codex-dispatcher --status-chat-id 123456
+codex-dispatcher --health-chat-id 123456
+codex-dispatcher --threads-chat-id 123456
+```
+
 ## First run
 
 ### 1. Validate environment before start
