@@ -240,6 +240,20 @@ Use `/help` for grouped command list and `/help <command>` (or `/doc <command>`)
 
 Typing `/` in Telegram also shows command hints published by the bot.
 
+## Python SDK facade (preview)
+
+You can drive the same orchestration layer from Python without Telegram:
+
+```python
+from codex_dispatcher.sdk import Dispatcher
+
+dispatcher = Dispatcher.from_config("config.json")
+code, report = dispatcher.check()
+status = dispatcher.status(chat_id=123456)
+```
+
+The SDK currently exposes first-step high-level methods for checks, chat/session state, settings, and prompt execution.
+
 ## Safety notes
 
 - `danger-full-access` disables sandbox protections and approvals. Use only when you understand the risk.

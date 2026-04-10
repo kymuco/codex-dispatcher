@@ -1,4 +1,5 @@
 from .service import (
+    AccountEntry,
     DispatcherService,
     HealthSnapshot,
     PromptJob,
@@ -11,6 +12,7 @@ from .service import (
 )
 
 __all__ = [
+    "AccountEntry",
     "DispatcherService",
     "HealthSnapshot",
     "PromptJob",
