@@ -291,6 +291,77 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(str(result.exception), "--ask requires a non-empty prompt.")
 
+    def test_main_sdk_accounts_subcommand_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        fake_dispatcher = SimpleNamespace(
+            accounts=lambda: (
+                SimpleNamespace(name="acc1", is_active=True),
+                SimpleNamespace(name="acc2", is_active=False),
+            )
+        )
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher) as from_config,
+            patch("sys.argv", ["codex-dispatcher", "sdk", "accounts"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        from_config.assert_called_once_with(None)
+        self.assertEqual(result.exception.code, 0)
+        text = output.getvalue()
+        self.assertIn("Accounts", text)
+        self.assertIn("- acc1 [active]", text)
+
+    def test_main_sdk_status_subcommand_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        fake_status = SimpleNamespace(
+            active_alias="main",
+            session="started",
+            last_account="acc1",
+            model="default",
+            reasoning="default",
+            sandbox="workspace-write",
+            default_account="acc1",
+            queue_size=0,
+            worker_busy=False,
+        )
+        fake_dispatcher = SimpleNamespace(status=lambda chat_id: fake_status)
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher) as from_config,
+            patch("sys.argv", ["codex-dispatcher", "sdk", "status", "123"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        from_config.assert_called_once_with(None)
+        self.assertEqual(result.exception.code, 0)
+        text = output.getvalue()
+        self.assertIn("Status", text)
+        self.assertIn("Chat id: 123", text)
+        self.assertIn("Worker busy: no", text)
+
+    def test_main_sdk_ask_subcommand_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        ask_calls: list[tuple[int, str]] = []
+        fake_result = SimpleNamespace(success=True, final_message="Done from sdk.")
+        fake_dispatcher = SimpleNamespace(
+            ask=lambda chat_id, prompt: ask_calls.append((chat_id, prompt)) or fake_result,
+        )
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher) as from_config,
+            patch("sys.argv", ["codex-dispatcher", "sdk", "ask", "777", "summarize"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        from_config.assert_called_once_with(None)
+        self.assertEqual(result.exception.code, 0)
+        self.assertEqual(ask_calls, [(777, "summarize")])
+        self.assertIn("Prompt completed.", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

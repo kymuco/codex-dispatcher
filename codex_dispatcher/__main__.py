@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from . import __version__
 from .bot import CodexTelegramBot
@@ -198,6 +199,216 @@ def _format_ask_result(chat_id: int, result: object) -> str:
     )
 
 
+def _build_sdk_subcommand_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="codex-dispatcher sdk",
+        description="Run SDK-backed commands without Telegram polling.",
+    )
+    parser.add_argument(
+        "--config",
+        help="Path to config.json. Defaults to BOT_CONFIG or ./config.json.",
+    )
+    subparsers = parser.add_subparsers(dest="sdk_command", required=True)
+
+    subparsers.add_parser("accounts", help="Print configured accounts.")
+
+    status_parser = subparsers.add_parser("status", help="Print status snapshot for chat id.")
+    status_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+
+    health_parser = subparsers.add_parser("health", help="Print health snapshot for chat id.")
+    health_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+
+    threads_parser = subparsers.add_parser("threads", help="List local chats for chat id.")
+    threads_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+
+    settings_parser = subparsers.add_parser("settings", help="Print active chat settings for chat id.")
+    settings_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+
+    session_parser = subparsers.add_parser("session-id", help="Print active session id for chat id.")
+    session_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+
+    switch_parser = subparsers.add_parser("switch-account", help="Set default account in local state.")
+    switch_parser.add_argument("account", metavar="ACCOUNT")
+
+    new_chat_parser = subparsers.add_parser("new-chat", help="Create and activate local chat alias.")
+    new_chat_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+    new_chat_parser.add_argument("alias", metavar="ALIAS")
+
+    use_chat_parser = subparsers.add_parser("use-chat", help="Switch active local chat alias.")
+    use_chat_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+    use_chat_parser.add_argument("alias", metavar="ALIAS")
+
+    reset_chat_parser = subparsers.add_parser("reset-chat", help="Reset active session id for chat id.")
+    reset_chat_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+
+    set_model_parser = subparsers.add_parser("set-model", help="Set model override for active local chat.")
+    set_model_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+    set_model_parser.add_argument("model", metavar="MODEL")
+
+    set_reasoning_parser = subparsers.add_parser("set-reasoning", help="Set reasoning for active local chat.")
+    set_reasoning_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+    set_reasoning_parser.add_argument("level", metavar="LEVEL")
+
+    set_sandbox_parser = subparsers.add_parser("set-sandbox", help="Set sandbox mode for active local chat.")
+    set_sandbox_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+    set_sandbox_parser.add_argument("mode", metavar="MODE")
+
+    attach_parser = subparsers.add_parser("attach-session", help="Attach session id or rollout file.")
+    attach_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+    attach_parser.add_argument("session_ref", metavar="SESSION_REF")
+
+    export_parser = subparsers.add_parser("export-vscode", help="Export active local chat session to VSCode home.")
+    export_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+
+    sync_parser = subparsers.add_parser("sync-vscode", help="Sync active local chat session into VSCode home.")
+    sync_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+
+    clone_parser = subparsers.add_parser("clone-vscode", help="Clone active local chat session into VSCode view.")
+    clone_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+
+    delete_copy_parser = subparsers.add_parser("delete-vscode-copy", help="Delete temporary VSCode view copy.")
+    delete_copy_parser.add_argument("session_id", metavar="SESSION_ID")
+
+    ask_parser = subparsers.add_parser("ask", help="Run prompt in active local chat.")
+    ask_parser.add_argument("chat_id", type=int, metavar="CHAT_ID")
+    ask_parser.add_argument("prompt", metavar="PROMPT")
+
+    return parser
+
+
+def _run_sdk_subcommand(argv: list[str]) -> int:
+    parser = _build_sdk_subcommand_parser()
+    args = parser.parse_args(argv)
+    dispatcher = Dispatcher.from_config(args.config)
+
+    if args.sdk_command == "accounts":
+        print(_format_accounts_text(dispatcher))
+        return 0
+    if args.sdk_command == "status":
+        print(_format_status_text(dispatcher, args.chat_id))
+        return 0
+    if args.sdk_command == "health":
+        print(_format_health_text(dispatcher, args.chat_id))
+        return 0
+    if args.sdk_command == "threads":
+        print(_format_threads_text(dispatcher, args.chat_id))
+        return 0
+    if args.sdk_command == "settings":
+        print(_format_settings_text(dispatcher, args.chat_id))
+        return 0
+    if args.sdk_command == "session-id":
+        print(_format_session_id_text(dispatcher, args.chat_id))
+        return 0
+    if args.sdk_command == "switch-account":
+        account = args.account.strip()
+        if not account:
+            raise ValueError("switch-account requires a non-empty account name.")
+        dispatcher.switch_account(account)
+        print(f"Default account changed: {account}")
+        return 0
+    if args.sdk_command == "new-chat":
+        alias = args.alias.strip()
+        if not alias:
+            raise ValueError("new-chat requires a non-empty alias.")
+        dispatcher.new_chat(args.chat_id, alias)
+        print(
+            "Local chat created and activated.\n"
+            f"Chat id: {args.chat_id}\n"
+            f"Alias: {alias}"
+        )
+        return 0
+    if args.sdk_command == "use-chat":
+        alias = args.alias.strip()
+        if not alias:
+            raise ValueError("use-chat requires a non-empty alias.")
+        dispatcher.use_chat(args.chat_id, alias)
+        print(
+            "Active local chat changed.\n"
+            f"Chat id: {args.chat_id}\n"
+            f"Alias: {alias}"
+        )
+        return 0
+    if args.sdk_command == "reset-chat":
+        alias = dispatcher.reset_chat(args.chat_id)
+        print(
+            "Session reset.\n"
+            f"Chat id: {args.chat_id}\n"
+            f"Alias: {alias}"
+        )
+        return 0
+    if args.sdk_command == "set-model":
+        model = _parse_optional_setting_value(args.model)
+        dispatcher.set_model(args.chat_id, model)
+        active_alias = dispatcher.active_chat(args.chat_id)
+        print(
+            "Model updated.\n"
+            f"Chat id: {args.chat_id}\n"
+            f"Alias: {active_alias}\n"
+            f"Model: {model or 'default'}"
+        )
+        return 0
+    if args.sdk_command == "set-reasoning":
+        reasoning = _parse_reasoning_value(args.level)
+        dispatcher.set_reasoning(args.chat_id, reasoning)
+        active_alias = dispatcher.active_chat(args.chat_id)
+        print(
+            "Reasoning updated.\n"
+            f"Chat id: {args.chat_id}\n"
+            f"Alias: {active_alias}\n"
+            f"Reasoning: {reasoning or 'default'}"
+        )
+        return 0
+    if args.sdk_command == "set-sandbox":
+        sandbox = _parse_sandbox_value(args.mode)
+        dispatcher.set_sandbox(args.chat_id, sandbox)
+        active_alias = dispatcher.active_chat(args.chat_id)
+        print(
+            "Sandbox updated.\n"
+            f"Chat id: {args.chat_id}\n"
+            f"Alias: {active_alias}\n"
+            f"Sandbox: {sandbox or 'default'}"
+        )
+        return 0
+    if args.sdk_command == "attach-session":
+        session_ref = args.session_ref.strip()
+        if not session_ref:
+            raise ValueError("attach-session requires a non-empty session reference.")
+        attachment = dispatcher.attach_session(args.chat_id, session_ref)
+        print(_format_attachment_text(args.chat_id, attachment))
+        return 0
+    if args.sdk_command == "export-vscode":
+        export = dispatcher.export_vscode(args.chat_id)
+        print(_format_vscode_export_text("Session exported to VSCode.", args.chat_id, export))
+        return 0
+    if args.sdk_command == "sync-vscode":
+        export = dispatcher.sync_vscode(args.chat_id)
+        print(_format_vscode_export_text("Session synced to VSCode.", args.chat_id, export))
+        return 0
+    if args.sdk_command == "clone-vscode":
+        clone = dispatcher.clone_vscode(args.chat_id)
+        print(_format_vscode_clone_text(args.chat_id, clone))
+        return 0
+    if args.sdk_command == "delete-vscode-copy":
+        session_id = args.session_id.strip()
+        if not session_id:
+            raise ValueError("delete-vscode-copy requires a non-empty session id.")
+        deleted_path = dispatcher.delete_vscode_copy(session_id)
+        print(
+            "VSCode view copy deleted.\n"
+            f"Session id: {session_id}\n"
+            f"Rollout path: {deleted_path}"
+        )
+        return 0
+    if args.sdk_command == "ask":
+        prompt = args.prompt.strip()
+        if not prompt:
+            raise ValueError("ask requires a non-empty prompt.")
+        result = dispatcher.ask(args.chat_id, prompt)
+        print(_format_ask_result(args.chat_id, result))
+        return 0
+    raise ValueError(f"Unsupported sdk subcommand: {args.sdk_command}")
+
+
 def _run_sdk_cli_action(args: argparse.Namespace) -> int | None:
     if not any(
         (
@@ -361,6 +572,13 @@ def _run_sdk_cli_action(args: argparse.Namespace) -> int | None:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "sdk":
+        try:
+            sdk_exit_code = _run_sdk_subcommand(sys.argv[2:])
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise SystemExit(str(exc)) from exc
+        raise SystemExit(sdk_exit_code)
+
     parser = argparse.ArgumentParser(description="Run the Codex dispatcher.")
     parser.add_argument(
         "--version",

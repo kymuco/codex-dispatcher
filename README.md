@@ -112,6 +112,16 @@ Run a prompt from CLI via SDK (without Telegram polling):
 codex-dispatcher --ask 123456 "summarize this repository"
 ```
 
+Recommended structured SDK CLI mode:
+
+```powershell
+codex-dispatcher sdk status 123456
+codex-dispatcher sdk threads 123456
+codex-dispatcher sdk new-chat 123456 bugfix
+codex-dispatcher sdk set-model 123456 gpt-5.4
+codex-dispatcher sdk ask 123456 "summarize this repository"
+```
+
 ## First run
 
 ### 1. Validate environment before start
