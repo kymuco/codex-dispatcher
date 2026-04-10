@@ -133,7 +133,7 @@ class BotRoutingTests(unittest.TestCase):
 
             self.assertIn("Health", bot.telegram.messages[-1]["text"])
             self.assertTrue(bot.telegram.callback_answers)
-            self.assertEqual(bot.telegram.callback_answers[-1]["text"], "Done.")
+            self.assertEqual(bot.telegram.callback_answers[-1]["text"], "Action completed.")
 
     def test_callback_routing_threads_use_alias_action(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_name:
@@ -156,7 +156,7 @@ class BotRoutingTests(unittest.TestCase):
             active_alias, _ = bot.state.get_active_thread(chat_id)
             self.assertEqual(active_alias, "bugfix")
             self.assertEqual(bot.telegram.messages[-1]["text"], "Switched to local chat: bugfix")
-            self.assertEqual(bot.telegram.callback_answers[-1]["text"], "Done.")
+            self.assertEqual(bot.telegram.callback_answers[-1]["text"], "Action completed.")
 
     def test_startup_checks_fail_early_with_actionable_message(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_name:

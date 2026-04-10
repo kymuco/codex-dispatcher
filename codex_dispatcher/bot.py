@@ -125,7 +125,7 @@ class CodexTelegramBot:
             return
 
         if self.config.allowed_chat_ids and chat_id not in self.config.allowed_chat_ids:
-            self.telegram.send_message(chat_id=chat_id, text="This bot is not enabled for this chat.")
+            self.telegram.send_message(chat_id=chat_id, text=self._chat_not_enabled_text())
             return
 
         text = message.get("text")
@@ -164,7 +164,7 @@ class CodexTelegramBot:
         if not isinstance(data, str):
             self.telegram.answer_callback_query(
                 callback_query_id=callback_query_id,
-                text="Unsupported action.",
+                text="Action payload is invalid.",
                 show_alert=False,
             )
             return
@@ -184,7 +184,7 @@ class CodexTelegramBot:
         if chat_id is None:
             self.telegram.answer_callback_query(
                 callback_query_id=callback_query_id,
-                text="Unsupported action context.",
+                text="Action context is missing.",
                 show_alert=False,
             )
             return
@@ -192,7 +192,7 @@ class CodexTelegramBot:
         if self.config.allowed_chat_ids and chat_id not in self.config.allowed_chat_ids:
             self.telegram.answer_callback_query(
                 callback_query_id=callback_query_id,
-                text="This bot is not enabled for this chat.",
+                text=self._chat_not_enabled_text(),
                 show_alert=True,
             )
             return
@@ -211,7 +211,7 @@ class CodexTelegramBot:
         if prefix != "cfm" or not token or decision not in {"yes", "no"}:
             self.telegram.answer_callback_query(
                 callback_query_id=callback_query_id,
-                text="Unknown action.",
+                text="Action not recognized. Run /status again.",
                 show_alert=False,
             )
             return
@@ -220,7 +220,7 @@ class CodexTelegramBot:
         if confirmation is None:
             self.telegram.answer_callback_query(
                 callback_query_id=callback_query_id,
-                text="This confirmation has expired.",
+                text="Confirmation expired. Run the command again.",
                 show_alert=False,
             )
             return
@@ -248,7 +248,7 @@ class CodexTelegramBot:
             self.telegram.send_message(
                 chat_id=chat_id,
                 reply_to_message_id=message_id,
-                text="Action cancelled.",
+                text="Action cancelled. No changes were made.",
             )
             return
 
@@ -256,13 +256,13 @@ class CodexTelegramBot:
             self._apply_confirmation(chat_id=chat_id, reply_to_message_id=message_id, confirmation=confirmation)
             self.telegram.answer_callback_query(
                 callback_query_id=callback_query_id,
-                text="Done.",
+                text="Action completed.",
                 show_alert=False,
             )
         except (KeyError, ValueError, FileNotFoundError) as exc:
             self.telegram.answer_callback_query(
                 callback_query_id=callback_query_id,
-                text="Failed.",
+                text="Action failed.",
                 show_alert=True,
             )
             self.telegram.send_message(
@@ -283,7 +283,7 @@ class CodexTelegramBot:
         if command is None:
             self.telegram.answer_callback_query(
                 callback_query_id=callback_query_id,
-                text="Unknown action.",
+                text="Action not recognized. Run /threads again.",
                 show_alert=False,
             )
             return
@@ -292,13 +292,13 @@ class CodexTelegramBot:
             self._handle_command(chat_id, reply_to_message_id, command)
             self.telegram.answer_callback_query(
                 callback_query_id=callback_query_id,
-                text="Done.",
+                text="Action completed.",
                 show_alert=False,
             )
         except (KeyError, ValueError, FileNotFoundError) as exc:
             self.telegram.answer_callback_query(
                 callback_query_id=callback_query_id,
-                text="Failed.",
+                text="Action failed.",
                 show_alert=True,
             )
             self.telegram.send_message(
@@ -1437,6 +1437,10 @@ class CodexTelegramBot:
     @staticmethod
     def _unknown_command_text() -> str:
         return "Unknown command.\nUse /help for the command list."
+
+    @staticmethod
+    def _chat_not_enabled_text() -> str:
+        return "This bot is not enabled for this chat.\nUse /chatid and add it to allowed_chat_ids."
 
     @classmethod
     def _unknown_reference_text(cls, command: str, exc: KeyError) -> str:

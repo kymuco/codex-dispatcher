@@ -293,6 +293,12 @@ class BotUiTests(unittest.TestCase):
             "Unknown command.\nUse /help for the command list.",
         )
 
+    def test_chat_not_enabled_message_has_recovery_hint(self) -> None:
+        self.assertEqual(
+            CodexTelegramBot._chat_not_enabled_text(),
+            "This bot is not enabled for this chat.\nUse /chatid and add it to allowed_chat_ids.",
+        )
+
     def test_unknown_reference_messages_are_actionable(self) -> None:
         self.assertEqual(
             CodexTelegramBot._unknown_reference_text("/use", KeyError("draft")),
