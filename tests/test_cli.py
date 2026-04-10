@@ -259,6 +259,38 @@ class CliTests(unittest.TestCase):
         self.assertIn("VSCode view copy created.", clone_output.getvalue())
         self.assertIn("VSCode view copy deleted.", delete_output.getvalue())
 
+    def test_main_ask_mode_exits_with_zero(self) -> None:
+        output = io.StringIO()
+        ask_calls: list[tuple[int, str]] = []
+        fake_result = SimpleNamespace(
+            success=True,
+            final_message="Summary complete.",
+        )
+        fake_dispatcher = SimpleNamespace(
+            ask=lambda chat_id, prompt: ask_calls.append((chat_id, prompt)) or fake_result,
+        )
+        with (
+            patch("codex_dispatcher.__main__.Dispatcher.from_config", return_value=fake_dispatcher),
+            patch("sys.argv", ["codex-dispatcher", "--ask", "902", "summarize repo"]),
+            redirect_stdout(output),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        self.assertEqual(result.exception.code, 0)
+        self.assertEqual(ask_calls, [(902, "summarize repo")])
+        text = output.getvalue()
+        self.assertIn("Prompt completed.", text)
+        self.assertIn("Chat id: 902", text)
+        self.assertIn("Summary complete.", text)
+
+    def test_main_ask_mode_rejects_blank_prompt(self) -> None:
+        with patch("sys.argv", ["codex-dispatcher", "--ask", "903", "   "]):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+
+        self.assertEqual(str(result.exception), "--ask requires a non-empty prompt.")
+
 
 if __name__ == "__main__":
     unittest.main()

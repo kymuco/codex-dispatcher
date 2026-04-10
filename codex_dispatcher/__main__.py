@@ -180,6 +180,24 @@ def _format_vscode_clone_text(chat_id: int, clone: object) -> str:
     )
 
 
+def _format_ask_result(chat_id: int, result: object) -> str:
+    success = bool(getattr(result, "success", False))
+    final_message = str(getattr(result, "final_message", "")).strip()
+    if success:
+        return (
+            "Prompt completed.\n"
+            f"Chat id: {chat_id}\n\n"
+            f"{final_message}"
+        )
+    return (
+        "Prompt failed.\n"
+        f"Chat id: {chat_id}\n"
+        f"Account: {getattr(result, 'account_name', '-')}\n"
+        f"Return code: {getattr(result, 'returncode', '-')}\n\n"
+        f"{final_message}"
+    )
+
+
 def _run_sdk_cli_action(args: argparse.Namespace) -> int | None:
     if not any(
         (
@@ -201,6 +219,7 @@ def _run_sdk_cli_action(args: argparse.Namespace) -> int | None:
             args.sync_vscode is not None,
             args.clone_vscode is not None,
             args.delete_vscode_copy is not None,
+            args.ask is not None,
         )
     ):
         return None
@@ -330,6 +349,14 @@ def _run_sdk_cli_action(args: argparse.Namespace) -> int | None:
             f"Rollout path: {deleted_path}"
         )
         return 0
+    if args.ask is not None:
+        chat_id = _parse_chat_id(args.ask[0], option="--ask")
+        prompt = args.ask[1].strip()
+        if not prompt:
+            raise ValueError("--ask requires a non-empty prompt.")
+        result = dispatcher.ask(chat_id, prompt)
+        print(_format_ask_result(chat_id, result))
+        return 0
     return None
 
 
@@ -451,6 +478,12 @@ def main() -> None:
         "--delete-vscode-copy",
         metavar="SESSION_ID",
         help="Delete temporary VSCode view copy by cloned session id via SDK.",
+    )
+    action_group.add_argument(
+        "--ask",
+        nargs=2,
+        metavar=("CHAT_ID", "PROMPT"),
+        help="Run prompt in active local chat for chat id via SDK.",
     )
     parser.add_argument(
         "config",

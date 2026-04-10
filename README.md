@@ -106,6 +106,12 @@ codex-dispatcher --sync-vscode 123456
 codex-dispatcher --delete-vscode-copy <cloned-session-id>
 ```
 
+Run a prompt from CLI via SDK (without Telegram polling):
+
+```powershell
+codex-dispatcher --ask 123456 "summarize this repository"
+```
+
 ## First run
 
 ### 1. Validate environment before start
