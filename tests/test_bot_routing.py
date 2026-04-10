@@ -170,7 +170,7 @@ class BotRoutingTests(unittest.TestCase):
             text = str(context.exception)
             self.assertIn("Startup check failed:", text)
             self.assertTrue(
-                "Codex binary was not found." in text or "Workspace directory is missing:" in text
+                "Codex binary was not found:" in text or "Workspace directory is missing:" in text
             )
 
 

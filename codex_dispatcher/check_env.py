@@ -6,6 +6,29 @@ from .config import load_config
 from .diagnostics import startup_report
 
 
+def _check_failure_text(*, problem: str, fix: str) -> str:
+    return "\n".join(
+        [
+            "Environment check failed.",
+            f"Problem: {problem}",
+            f"Fix: {fix}",
+        ]
+    )
+
+
+def _load_config_failure_text(exc: Exception) -> str:
+    problem = str(exc).strip().replace("\n", " ")
+    if isinstance(exc, FileNotFoundError):
+        return _check_failure_text(
+            problem=problem,
+            fix="Use a valid config path or copy config.example.json to config.json.",
+        )
+    return _check_failure_text(
+        problem=problem,
+        fix="Update the listed config field and run --check again.",
+    )
+
+
 def format_environment_report(report: dict[str, object], *, config_path: Path) -> str:
     lines = [
         "Environment check",
@@ -24,8 +47,12 @@ def format_environment_report(report: dict[str, object], *, config_path: Path) -
         lines.append("Issues:")
         for issue in issues:
             if isinstance(issue, str):
-                compact_issue = issue.replace("\n", " ")
-                lines.append(f"- {compact_issue}")
+                chunks = [line.strip() for line in issue.splitlines() if line.strip()]
+                if not chunks:
+                    continue
+                lines.append(f"- {chunks[0]}")
+                for chunk in chunks[1:]:
+                    lines.append(f"  {chunk}")
     return "\n".join(lines)
 
 
@@ -33,7 +60,7 @@ def run_environment_check_from_path(config_path: str | None) -> tuple[int, str]:
     try:
         config = load_config(config_path)
     except (FileNotFoundError, ValueError) as exc:
-        return 1, f"Environment check failed: {exc}"
+        return 1, _load_config_failure_text(exc)
 
     report = startup_report(config)
     text = format_environment_report(report, config_path=config.config_path)

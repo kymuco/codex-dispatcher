@@ -6,6 +6,10 @@ from .config import AppConfig
 from .codex_runner import CodexService
 
 
+def _issue(problem: str, fix: str) -> str:
+    return f"Problem: {problem}\nFix: {fix}"
+
+
 def startup_report(config: AppConfig) -> dict[str, Any]:
     issues: list[str] = []
     token_status = "ok"
@@ -23,8 +27,10 @@ def startup_report(config: AppConfig) -> dict[str, Any]:
     ):
         token_status = "missing"
         issues.append(
-            "Telegram token looks invalid or placeholder.\n"
-            "Set telegram_token in config.json to a real bot token."
+            _issue(
+                "Telegram token looks invalid or placeholder.",
+                "Set telegram_token in config.json to a real bot token.",
+            )
         )
 
     try:
@@ -32,16 +38,20 @@ def startup_report(config: AppConfig) -> dict[str, Any]:
     except FileNotFoundError:
         codex_binary_status = "missing"
         issues.append(
-            "Codex binary was not found.\n"
-            "Set codex.binary in config.json to a valid executable path."
+            _issue(
+                f"Codex binary was not found: {config.codex.binary}",
+                "Set codex.binary in config.json to a valid executable path.",
+            )
         )
 
     cwd = config.codex.cwd
     if not cwd.exists() or not cwd.is_dir():
         workspace_status = "missing"
         issues.append(
-            f"Workspace directory is missing: {cwd}\n"
-            "Set codex.cwd in config.json to an existing directory."
+            _issue(
+                f"Workspace directory is missing: {cwd}",
+                "Set codex.cwd in config.json to an existing directory.",
+            )
         )
 
     try:
@@ -49,31 +59,39 @@ def startup_report(config: AppConfig) -> dict[str, Any]:
     except OSError:
         state_dir_status = "error"
         issues.append(
-            f"State directory is not writable: {config.codex.state_dir}\n"
-            "Set codex.state_dir in config.json to a writable path."
+            _issue(
+                f"State directory is not writable: {config.codex.state_dir}",
+                "Set codex.state_dir in config.json to a writable path.",
+            )
         )
 
     if not config.accounts:
         accounts_status = "missing"
         issues.append(
-            "No Codex accounts are configured.\n"
-            "Add at least one account in config.json."
+            _issue(
+                "No Codex accounts are configured.",
+                "Add at least one account in config.json.",
+            )
         )
     else:
         for account in config.accounts:
             if not account.auth_file.exists():
                 accounts_status = "missing"
                 issues.append(
-                    f"account '{account.name}' auth file is missing.\n"
-                    "Check the auth_file path in config.json."
+                    _issue(
+                        f"account '{account.name}' auth_file is missing: {account.auth_file}",
+                        "Check accounts[].auth_file paths in config.json.",
+                    )
                 )
                 break
             missing_extra = next((path for path in account.extra_files if not path.exists()), None)
             if missing_extra is not None:
                 accounts_status = "missing"
                 issues.append(
-                    f"account '{account.name}' extra file is missing: {missing_extra}\n"
-                    "Check account extra_files paths in config.json."
+                    _issue(
+                        f"account '{account.name}' extra file is missing: {missing_extra}",
+                        "Check accounts[].extra_files paths in config.json.",
+                    )
                 )
                 break
 

@@ -62,7 +62,22 @@ class EnvironmentCheckTests(unittest.TestCase):
     def test_run_environment_check_from_path_handles_missing_config(self) -> None:
         code, text = run_environment_check_from_path("C:\\missing\\config.json")
         self.assertEqual(code, 1)
-        self.assertIn("Environment check failed:", text)
+        self.assertIn("Environment check failed.", text)
+        self.assertIn("Problem:", text)
+        self.assertIn("Fix:", text)
+
+    def test_run_environment_check_from_path_handles_invalid_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            config_path = temp_dir / "config.json"
+            config_path.write_text("{}", encoding="utf-8")
+
+            code, text = run_environment_check_from_path(str(config_path))
+
+            self.assertEqual(code, 1)
+            self.assertIn("Environment check failed.", text)
+            self.assertIn("Config field 'telegram_token' must be a non-empty string.", text)
+            self.assertIn("Fix: Update the listed config field and run --check again.", text)
 
     def test_run_environment_check_from_path_reports_not_ready(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_name:
@@ -91,6 +106,21 @@ class EnvironmentCheckTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("Telegram token: missing", text)
             self.assertIn("Result: not ready", text)
+
+    def test_startup_report_auth_file_issue_includes_path_and_fix(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            config = self._make_config(temp_dir)
+            auth_path = config.accounts[0].auth_file
+            auth_path.unlink()
+
+            report = startup_report(config)
+            issue_text = "\n".join(str(item) for item in report["issues"])
+
+            self.assertFalse(report["ready"])
+            self.assertIn("auth_file is missing", issue_text)
+            self.assertIn(str(auth_path), issue_text)
+            self.assertIn("Fix:", issue_text)
 
 
 if __name__ == "__main__":
